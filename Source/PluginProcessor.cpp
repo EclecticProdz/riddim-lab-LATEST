@@ -1,16 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-namespace
-{
-    constexpr float maxDelaySeconds = 4.0f;
-
-    float tapeSaturate (float x, float drive)
-    {
-        const float amount = 1.0f + drive * 7.0f;
-        return std::tanh (x * amount) / std::tanh (amount);
-    }
-}
+using namespace rp;
 
 RiddimLabAudioProcessor::RiddimLabAudioProcessor()
     : AudioProcessor (BusesProperties()
@@ -18,114 +9,84 @@ RiddimLabAudioProcessor::RiddimLabAudioProcessor()
         .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       parameters (*this, nullptr, "PARAMETERS", createParameterLayout())
 {
+    for (int s = 0; s < NumSec; ++s)
+        for (int p = 0; p < NumP; ++p)
+            if (exists ((Sec) s, (P) p))
+                ptr[s][p] = parameters.getRawParameterValue (id ((Sec) s, (P) p));
+
+    pBypass = parameters.getRawParameterValue ("bypass");
+    pThrow = parameters.getRawParameterValue ("throw");
+    pPanic = parameters.getRawParameterValue ("panic");
+    pSection = parameters.getRawParameterValue ("activeSection");
+    pGuitarMode = parameters.getRawParameterValue ("guitarMode");
 }
 
 RiddimLabAudioProcessor::APVTS::ParameterLayout RiddimLabAudioProcessor::createParameterLayout()
 {
-    APVTS::ParameterLayout p;
+    APVTS::ParameterLayout layout;
     using Float = juce::AudioParameterFloat;
     using Choice = juce::AudioParameterChoice;
+    using Bool = juce::AudioParameterBool;
 
-    p.add (std::make_unique<Choice> ("division", "Division",
-        juce::StringArray { "1/4", "1/8", "1/8D", "1/8T", "1/16", "1/4D" }, 2));
-    p.add (std::make_unique<Float> ("time", "Free Time (ms)",
-        juce::NormalisableRange<float> (30.0f, 1200.0f, 1.0f), 360.0f));
-    p.add (std::make_unique<Float> ("feedback", "Feedback",
-        juce::NormalisableRange<float> (0.0f, 0.94f, 0.001f), 0.46f));
-    p.add (std::make_unique<Float> ("mix", "Mix",
-        juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.26f));
-    p.add (std::make_unique<Float> ("cutoff", "Filter Cutoff",
-        juce::NormalisableRange<float> (180.0f, 12000.0f, 1.0f, 0.35f), 2800.0f));
-    p.add (std::make_unique<Float> ("resonance", "Resonance",
-        juce::NormalisableRange<float> (0.1f, 0.92f, 0.001f), 0.35f));
-    p.add (std::make_unique<Float> ("drive", "Tape Heat",
-        juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.28f));
-    p.add (std::make_unique<Float> ("width", "Stereo Offset",
-        juce::NormalisableRange<float> (0.0f, 0.5f, 0.001f), 0.14f));
-    p.add (std::make_unique<Float> ("damping", "Repeat Damping",
-        juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.42f));
-    p.add (std::make_unique<Float> ("tapeSat", "Tape Saturation", juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.18f));
-    p.add (std::make_unique<Float> ("tapeTone", "Tape Tone", juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.72f));
-    p.add (std::make_unique<Float> ("wow", "Wow", juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.05f));
-    p.add (std::make_unique<Float> ("flutter", "Flutter", juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.04f));
-    p.add (std::make_unique<Float> ("wear", "Tape Wear", juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.0f));
-    p.add (std::make_unique<Choice> ("filterMode", "Filter Mode", juce::StringArray { "Low-pass", "High-pass" }, 0));
-    p.add (std::make_unique<juce::AudioParameterBool> ("sync", "Tempo Sync", true));
-    p.add (std::make_unique<juce::AudioParameterBool> ("throw", "Feedback Throw", false));
-    p.add (std::make_unique<juce::AudioParameterBool> ("panic", "Panic / Clear", false));
-    p.add (std::make_unique<juce::AudioParameterBool> ("bypass", "Effect Bypass", false));
+    // Global controls (same ids as before).
+    layout.add (std::make_unique<Bool> ("throw", "Feedback Throw", false));
+    layout.add (std::make_unique<Bool> ("panic", "Panic / Clear", false));
+    layout.add (std::make_unique<Bool> ("bypass", "Effect Bypass", false));
+    layout.add (std::make_unique<juce::AudioParameterInt> ("activeSection", "Active Section", 0, 6, 0));
+    layout.add (std::make_unique<juce::AudioParameterInt> ("guitarMode", "Guitar Mode", 0, 2, 0));
 
-    // UI-selected processing context and Guitar mode.
-    p.add (std::make_unique<juce::AudioParameterInt> ("activeSection", "Active Section", 0, 6, 0));
-    p.add (std::make_unique<juce::AudioParameterInt> ("guitarMode", "Guitar Mode", 0, 2, 0));
-    p.add (std::make_unique<Float> ("guitarChopTightness", "Guitar Chop Tightness", juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.5f));
-    p.add (std::make_unique<Float> ("guitarPickBrightness", "Guitar Pick Brightness", juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.5f));
-    p.add (std::make_unique<Float> ("guitarRhythmBody", "Guitar Rhythm Body", juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.5f));
-
-    // Independent control groups used by the instrument-specific processing path.
-    const juce::StringArray sectionNames { "master", "drums", "guitar", "bass", "keys", "horns", "vocal" };
-    for (const auto& section : sectionNames)
-    {
-        p.add (std::make_unique<Float> (section + "Drive", section + " Drive",
-            juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.15f));
-        p.add (std::make_unique<Float> (section + "Tone", section + " Tone",
-            juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.65f));
-        p.add (std::make_unique<Float> (section + "Comp", section + " Compression",
-            juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.2f));
-    }
-    return p;
-}
-
-void RiddimLabAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
-{
-    currentSampleRate = sampleRate;
-    const int length = juce::roundToInt (sampleRate * maxDelaySeconds) + samplesPerBlock + 8;
-    delayBuffer.setSize (2, length);
-    delayBuffer.clear();
-    writePosition = 0;
-
-    for (int ch = 0; ch < 2; ++ch)
-    {
-        filters[ch].reset();
-        filters[ch].setType (juce::dsp::StateVariableTPTFilterType::lowpass);
-        filters[ch].prepare ({ sampleRate, (juce::uint32) samplesPerBlock, 1 });
-        tapeToneFilters[ch].reset();
-        tapeToneFilters[ch].setType (juce::dsp::StateVariableTPTFilterType::lowpass);
-        tapeToneFilters[ch].prepare ({ sampleRate, (juce::uint32) samplesPerBlock, 1 });
-    }
-    for (int section = 0; section < 7; ++section)
-        for (int ch = 0; ch < 2; ++ch)
+    for (int s = 0; s < NumSec; ++s)
+        for (int pi = 0; pi < NumP; ++pi)
         {
-            instrumentFilters[section][ch].reset();
-            instrumentFilters[section][ch].setType (juce::dsp::StateVariableTPTFilterType::lowpass);
-            instrumentFilters[section][ch].prepare ({ sampleRate, (juce::uint32) samplesPerBlock, 1 });
+            const auto sec = (Sec) s; const auto p = (P) pi;
+            if (! exists (sec, p)) continue;
+            const auto& sp = spec (p);
+            const auto pid = id (sec, p);
+            const auto name = displayName (sec, p);
+            const float def = defaultValue (sec, p);
+            switch (sp.kind)
+            {
+                case KFloat:
+                {
+                    juce::NormalisableRange<float> r (sp.lo, sp.hi, sp.step);
+                    r.skew = sp.skew;
+                    layout.add (std::make_unique<juce::AudioParameterFloat> (pid, name, r, def));
+                    break;
+                }
+                case KChoice:
+                    layout.add (std::make_unique<juce::AudioParameterChoice> (pid, name, choiceList (p), (int) def));
+                    break;
+                case KBool:
+                    layout.add (std::make_unique<juce::AudioParameterBool> (pid, name, def > 0.5f));
+                    break;
+            }
         }
-
-    juce::dsp::Reverb::Parameters rv;
-    rv.roomSize = 0.72f; rv.damping = 0.42f; rv.wetLevel = 1.0f; rv.dryLevel = 0.0f; rv.width = 1.0f;
-    springReverb.setParameters (rv);
-    rv.roomSize = 0.88f; rv.damping = 0.28f;
-    plateReverb.setParameters (rv);
-    wowPhase = flutterPhase = 0.0;
-
-    mixSmoothed.reset (sampleRate, 0.025);
-    feedbackSmoothed.reset (sampleRate, 0.035);
-    cutoffSmoothed.reset (sampleRate, 0.03);
-    driveSmoothed.reset (sampleRate, 0.03);
-    dampingSmoothed.reset (sampleRate, 0.03);
-
-    mixSmoothed.setCurrentAndTargetValue (parameters.getRawParameterValue ("mix")->load());
-    feedbackSmoothed.setCurrentAndTargetValue (parameters.getRawParameterValue ("feedback")->load());
-    cutoffSmoothed.setCurrentAndTargetValue (parameters.getRawParameterValue ("cutoff")->load());
-    driveSmoothed.setCurrentAndTargetValue (parameters.getRawParameterValue ("drive")->load());
-    dampingSmoothed.setCurrentAndTargetValue (parameters.getRawParameterValue ("damping")->load());
-    panicGain = 1.0f;
-    wasPanic = false;
+    return layout;
 }
 
-void RiddimLabAudioProcessor::releaseResources()
+float RiddimLabAudioProcessor::raw (Sec s, P p) const noexcept
 {
-    delayBuffer.setSize (0, 0);
+    if (auto* a = ptr[s][p]) return a->load();
+    return defaultValue (s, p);
+}
+
+void RiddimLabAudioProcessor::prepareToPlay (double sampleRate, int)
+{
+    sr = sampleRate;
+    L.assign ((size_t) kChunk, 0.0f); R.assign ((size_t) kChunk, 0.0f);
+    source.prepare (sr); comp.prepare (sr); eq.prepare (sr); tape.prepare (sr);
+    echo.prepare (sr, kChunk); delay.prepare (sr, kChunk); mod.prepare (sr, kChunk);
+    reverb.prepare (sr); limiter.prepare (sr);
+    for (int c = 0; c < 2; ++c)
+    {
+        inFilt[c].setIdentity(); inFilt[c].reset();
+        anaLow[c].lowShelf (sr, 120.0, 0.7, 1.0); anaLow[c].reset();
+        anaHigh[c].highShelf (sr, 9000.0, 0.7, -2.0); anaHigh[c].reset();
+    }
+    inGainS.reset (sr, 0.02); outGainS.reset (sr, 0.02);
+    primed = false;
+    echoWasOn = delayWasOn = modWasOn = revWasOn = true;
+    setLatencySamples (tape.latencySamples());
 }
 
 bool RiddimLabAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -139,12 +100,8 @@ void RiddimLabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 {
     juce::ScopedNoDenormals noDenormals;
     const int channels = juce::jmin (2, buffer.getNumChannels());
-    float blockPeak[2] { 0.0f, 0.0f };
-    const int totalSamples = delayBuffer.getNumSamples();
-    if (channels == 0 || totalSamples < 4) return;
-
-    const auto get = [this] (const juce::String& id) { return parameters.getRawParameterValue (id)->load(); };
-    if (get ("bypass") > 0.5f) return;
+    const int total = buffer.getNumSamples();
+    if (channels == 0 || total == 0 || L.empty()) return;
 
     double bpm = 120.0;
     if (auto* playHead = getPlayHead())
@@ -152,154 +109,193 @@ void RiddimLabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             if (auto hostBpm = pos->getBpm())
                 bpm = juce::jlimit (30.0, 300.0, *hostBpm);
 
-    const int activeSection = juce::jlimit (0, 6, juce::roundToInt (get ("activeSection")));
-    const int guitarModeIndex = juce::jlimit (0, 2, juce::roundToInt (get ("guitarMode")));
-    const float guitarChopTightness = get ("guitarChopTightness");
-    const float guitarPickBrightness = get ("guitarPickBrightness");
-    const float guitarRhythmBody = get ("guitarRhythmBody");
-    const juce::StringArray sectionIds { "master", "drums", "guitar", "bass", "keys", "horns", "vocal" };
-    const auto sectionId = sectionIds[activeSection];
-    const float sectionDrive = get (sectionId + "Drive");
-    const float sectionTone = get (sectionId + "Tone");
-    const float sectionComp = get (sectionId + "Comp");
-    const float tapeSat = get ("tapeSat");
-    const float tapeTone = get ("tapeTone");
-    const float wow = get ("wow");
-    const float flutter = get ("flutter");
-    const float wear = get ("wear");
-    const bool highPass = get ("filterMode") > 0.5f;
-    const bool sync = get ("sync") > 0.5f;
-    const int division = juce::roundToInt (get ("division"));
-    const double beatMs = 60000.0 / bpm;
-    const double multipliers[] = { 1.0, 0.5, 0.75, 1.0 / 3.0, 0.25, 1.5 };
-    const double delayMs = sync ? beatMs * multipliers[juce::jlimit (0, 5, division)]
-                                : (double) get ("time");
-    const int baseDelay = juce::jlimit (1, totalSamples - 2,
-        juce::roundToInt ((delayMs / 1000.0) * currentSampleRate));
-    const float offset = get ("width") * 0.5f;
-    delaySamples[0] = baseDelay;
-    delaySamples[1] = juce::jlimit (1, totalSamples - 2,
-        juce::roundToInt (baseDelay * (1.0f + offset)));
+    const int sec = juce::jlimit (0, NumSec - 1, juce::roundToInt (pSection->load()));
+    const int gMode = juce::jlimit (0, 2, juce::roundToInt (pGuitarMode->load()));
+    const bool bypass = pBypass->load() > 0.5f, thr = pThrow->load() > 0.5f, panic = pPanic->load() > 0.5f;
 
-    const bool throwOn = get ("throw") > 0.5f;
-    const bool panicOn = get ("panic") > 0.5f;
-    if (panicOn && ! wasPanic)
+    float ip[2] { 0, 0 }, op[2] { 0, 0 }, cg = 0, lg = 0;
+    for (int start = 0; start < total; start += kChunk)
     {
-        delayBuffer.clear();
-        for (auto& f : filters) f.reset();
-        panicGain = 0.0f;
-    }
-    wasPanic = panicOn;
-
-    const float targetFeedback = throwOn ? juce::jmin (0.94f, get ("feedback") + 0.22f) : get ("feedback");
-    mixSmoothed.setTargetValue (get ("mix"));
-    feedbackSmoothed.setTargetValue (targetFeedback);
-    cutoffSmoothed.setTargetValue (get ("cutoff"));
-    driveSmoothed.setTargetValue (get ("drive"));
-    dampingSmoothed.setTargetValue (get ("damping"));
-
-    for (int ch = 0; ch < channels; ++ch)
-        filters[ch].setResonance (get ("resonance"));
-
-    for (int i = 0; i < buffer.getNumSamples(); ++i)
-    {
-        const float mix = mixSmoothed.getNextValue();
-        const float feedback = juce::jlimit (0.0f, 0.94f, feedbackSmoothed.getNextValue());
-        const float cutoff = cutoffSmoothed.getNextValue();
-        const float drive = driveSmoothed.getNextValue();
-        const float damping = dampingSmoothed.getNextValue();
-
-        for (int ch = 0; ch < channels; ++ch)
+        const int n = juce::jmin (kChunk, total - start);
+        for (int i = 0; i < n; ++i)
         {
-            filters[ch].setCutoffFrequency (cutoff);
-            filters[ch].setType (highPass ? juce::dsp::StateVariableTPTFilterType::highpass
-                                          : juce::dsp::StateVariableTPTFilterType::lowpass);
-            float dry = buffer.getSample (ch, i);
-            // Tape stage: smooth saturation, tone loss, and subtle deterministic wow/flutter.
-            tapeToneFilters[ch].setCutoffFrequency (juce::jmap (tapeTone, 0.0f, 1.0f, 2200.0f, 20000.0f));
-            const float softened = tapeToneFilters[ch].processSample (0, dry);
-            const float tapeBlend = tapeSaturate (dry, tapeSat * 0.85f);
-            const float lofi = dry * (1.0f - wear * 0.28f) + softened * wear * 0.28f;
-            const float modulation = 1.0f + std::sin ((float) wowPhase) * wow * 0.0035f
-                                        + std::sin ((float) flutterPhase) * flutter * 0.0012f;
-            dry = ((lofi * (1.0f - tapeSat * 0.45f)) + (tapeBlend * tapeSat * 0.45f)) * modulation;
-            int readPos = writePosition - delaySamples[ch];
-            if (readPos < 0) readPos += totalSamples;
-            const float delayed = delayBuffer.getSample (ch, readPos);
-            const float filtered = filters[ch].processSample (0, delayed);
-            const float damped = filtered * (1.0f - damping * 0.58f);
-            const float tape = tapeSaturate (damped, drive);
-            const float write = juce::jlimit (-1.25f, 1.25f, dry + tape * feedback);
-            delayBuffer.setSample (ch, writePosition, write);
-
-            if (ch == 0 && panicGain < 1.0f)
-                panicGain = juce::jmin (1.0f, panicGain + 0.0008f);
-
-            float processed = dry * (1.0f - mix) + delayed * mix * panicGain;
-
-            // Distinct audio-processing path for the currently selected section.
-            // All sections have independent parameter groups and filter state.
-            const float cutoffHz = [&]()
-            {
-                switch (activeSection)
-                {
-                    case 1: return juce::jmap (sectionTone, 0.0f, 1.0f, 1800.0f, 16000.0f); // drums: attack/body
-                    case 2: return juce::jmap (sectionTone, 0.0f, 1.0f, 1200.0f, 15000.0f); // guitar: skank/pick
-                    case 3: return juce::jmap (sectionTone, 0.0f, 1.0f, 90.0f, 1200.0f);    // bass: low-pass
-                    case 4: return juce::jmap (sectionTone, 0.0f, 1.0f, 2500.0f, 18000.0f); // keys: sheen
-                    case 5: return juce::jmap (sectionTone, 0.0f, 1.0f, 2200.0f, 17000.0f); // horns: presence
-                    case 6: return juce::jmap (sectionTone, 0.0f, 1.0f, 3500.0f, 14000.0f); // vocal: de-ess-ish tone
-                    default: return juce::jmap (sectionTone, 0.0f, 1.0f, 1000.0f, 19000.0f);
-                }
-            }();
-            instrumentFilters[activeSection][ch].setCutoffFrequency (cutoffHz);
-            instrumentFilters[activeSection][ch].setType (juce::dsp::StateVariableTPTFilterType::lowpass);
-            float toneProcessed = instrumentFilters[activeSection][ch].processSample (0, processed);
-            const float toneMix = activeSection == 3 ? 0.85f : 0.22f;
-            processed += (toneProcessed - processed) * toneMix;
-
-            // Section-specific dynamics/saturation character.
-            const float sat = tapeSaturate (processed, sectionDrive * (activeSection == 1 ? 1.25f : 0.9f));
-            processed = processed * (1.0f - sectionDrive * 0.55f) + sat * sectionDrive * 0.55f;
-            const float threshold = activeSection == 1 || activeSection == 6 ? 0.58f : 0.78f;
-            const float compAmount = sectionComp * (activeSection == 1 ? 0.62f : activeSection == 6 ? 0.68f : 0.42f);
-            const float magnitude = std::abs (processed);
-            if (magnitude > threshold)
-                processed = std::copysign (threshold + (magnitude - threshold) * (1.0f - compAmount), processed);
-
-            if (activeSection == 2)
-            {
-                if (guitarModeIndex == 0) // CHOP: tighter transient, reduced low-mid bloom
-                {
-                    processed *= (1.0f - 0.12f * guitarChopTightness);
-                    processed = std::tanh (processed * (1.0f + guitarChopTightness * 0.35f));
-                }
-                else if (guitarModeIndex == 1) // PICK: brighter, more defined attack
-                {
-                    const float bright = juce::jlimit (-1.0f, 1.0f, processed - sectionEnvelope[2][ch]);
-                    processed += bright * (0.08f + 0.22f * guitarPickBrightness);
-                }
-                else // RHYTHM: fuller body, restrained peaks
-                {
-                    processed = processed * (0.85f + 0.15f * guitarRhythmBody);
-                    processed = std::tanh (processed * 1.08f);
-                }
-                sectionEnvelope[2][ch] = 0.995f * sectionEnvelope[2][ch] + 0.005f * processed;
-            }
-            if (activeSection == 2 || activeSection == 4)
-                processed = 0.985f * processed + 0.015f * std::sin (processed * 1.7f); // subtle harmonic body
-            if (activeSection == 5)
-                processed = 0.94f * processed + 0.06f * std::tanh (processed * 1.8f); // brass presence
-            if (activeSection == 6)
-                processed = std::tanh (processed * (1.0f + sectionComp * 1.5f)); // vocal density
-
-            buffer.setSample (ch, i, processed);
-            blockPeak[ch] = juce::jmax (blockPeak[ch], std::abs (processed));
+            L[(size_t) i] = buffer.getSample (0, start + i);
+            R[(size_t) i] = channels > 1 ? buffer.getSample (1, start + i) : L[(size_t) i];
         }
-        writePosition = (writePosition + 1) % totalSamples;
+        runChunk (L.data(), R.data(), n, sec, bypass, thr, panic, bpm, gMode);
+        for (int i = 0; i < n; ++i)
+        {
+            buffer.setSample (0, start + i, L[(size_t) i]);
+            if (channels > 1) buffer.setSample (1, start + i, R[(size_t) i]);
+            op[0] = juce::jmax (op[0], std::abs (L[(size_t) i])); op[1] = juce::jmax (op[1], std::abs (R[(size_t) i]));
+        }
+        cg = juce::jmax (cg, compGr.load()); lg = juce::jmax (lg, limGr.load());
+        ip[0] = juce::jmax (ip[0], ipk[0]); ip[1] = juce::jmax (ip[1], ipk[1]);
     }
-    for (int ch = 0; ch < 2; ++ch)
-        outputPeak[ch].store (juce::jmax (blockPeak[ch], outputPeak[ch].load() * 0.82f), std::memory_order_relaxed);
+    for (int c = 0; c < 2; ++c)
+    {
+        outPeak[c].store (juce::jmax (op[c], outPeak[c].load() * 0.82f), std::memory_order_relaxed);
+        inPeak[c].store  (juce::jmax (ip[c], inPeak[c].load()  * 0.82f), std::memory_order_relaxed);
+    }
+}
+
+void RiddimLabAudioProcessor::runChunk (float* l, float* r, int n, int sec, bool bypass, bool throwOn, bool panic, double bpm, int gMode)
+{
+    const Sec s = (Sec) sec;
+    const auto g = [&] (P p) { return raw (s, p); };
+
+    // --- input stage -------------------------------------------------------
+    inGainS.setTargetValue (riddim::dbToGain (g (InGain)));
+    if (! primed) { inGainS.setCurrentAndTargetValue (riddim::dbToGain (g (InGain))); outGainS.setCurrentAndTargetValue (riddim::dbToGain (g (OutGain))); primed = true; }
+    outGainS.setTargetValue (riddim::dbToGain (g (OutGain)));
+    ipk[0] = ipk[1] = 0.0f;
+
+    if (bypass)
+    {
+        // Keep the signal through the tape delay line so latency stays constant.
+        riddim::TapeStage::Params tp; tp.on = false;
+        tape.process (l, r, n, tp);
+        compGr.store (0.0f); limGr.store (0.0f);
+        return;
+    }
+
+    const bool inSat = g (InSat) > 0.5f;
+    for (int i = 0; i < n; ++i)
+    {
+        const float gn = inGainS.getNextValue();
+        l[i] *= gn; r[i] *= gn;
+        ipk[0] = juce::jmax (ipk[0], std::abs (l[i])); ipk[1] = juce::jmax (ipk[1], std::abs (r[i]));
+        if (inSat) { l[i] = riddim::softSat (l[i], 0.45f); r[i] = riddim::softSat (r[i], 0.45f); }
+    }
+
+    // --- source voicing (instrument tabs) ----------------------------------
+    if (s != Master && g (SrcOn) > 0.5f)
+    {
+        float k[3];
+        for (int i = 0; i < 3; ++i) k[i] = g (sourceParam (s, gMode, i));
+        source.process (l, r, n, sec, gMode, k);
+    }
+
+    // --- filter on the input (route = Input) -------------------------------
+    const bool filtOn = g (FiltOn) > 0.5f;
+    const int route = juce::roundToInt (g (FilterRoute));
+    const int fmode = juce::jlimit (0, 2, juce::roundToInt (g (FilterMode)));
+    const float cutoff = g (Cutoff), res = g (Resonance);
+    const double q = 0.5 * std::pow (16.0, (res - 0.1) / 0.82);
+    if (filtOn && route == 1)
+    {
+        for (int c = 0; c < 2; ++c)
+        {
+            if (fmode == 0) inFilt[c].lowpass (sr, cutoff, q);
+            else if (fmode == 1) inFilt[c].highpass (sr, cutoff, q);
+            else inFilt[c].bandpass (sr, cutoff, q);
+        }
+        for (int i = 0; i < n; ++i) { l[i] = inFilt[0].process (l[i]); r[i] = inFilt[1].process (r[i]); }
+    }
+
+    // --- compressor ---------------------------------------------------------
+    float gr = 0.0f;
+    if (g (CompOn) > 0.5f)
+    {
+        riddim::Compressor::Params cp;
+        cp.threshDb = g (CompThresh); cp.ratio = g (CompRatio); cp.makeupDb = g (CompMakeup); cp.mode = juce::roundToInt (g (CompMode));
+        gr = comp.process (l, r, n, cp);
+    }
+    else comp.reset();
+    compGr.store (gr);
+
+    // --- tone EQ ------------------------------------------------------------
+    if (g (EqOn) > 0.5f) { eq.set (g (EqLow), g (EqMid), g (EqHigh), g (EqPres)); eq.process (l, r, n); }
+
+    // --- tape (always in the path so that reported latency is constant) -----
+    {
+        riddim::TapeStage::Params tp;
+        tp.on = g (TapeOn) > 0.5f; tp.sat = g (TapeSat); tp.tone = g (TapeTone);
+        tp.wow = g (Wow); tp.flutter = g (Flutter); tp.wear = g (Wear); tp.type = juce::roundToInt (g (TapeType));
+        tape.process (l, r, n, tp);
+    }
+
+    // --- echo ----------------------------------------------------------------
+    const bool echoOn = g (EchoOn) > 0.5f;
+    if (echoOn)
+    {
+        static const double beats[] = { 1.0, 0.5, 0.75, 1.0 / 3.0, 0.25, 1.5 };
+        const double beatMs = 60000.0 / bpm;
+        const double ms = g (Sync) > 0.5f ? beatMs * beats[juce::jlimit (0, 5, juce::roundToInt (g (Division)))] : (double) g (rp::EchoTime);
+        const float base = (float) (ms * 0.001 * sr);
+        riddim::DubEcho::Params ep;
+        ep.delaySamples0 = base;
+        ep.delaySamples1 = base * (1.0f + g (Width) * 0.5f);
+        ep.feedback = throwOn ? juce::jmin (0.94f, g (Feedback) + 0.22f) : g (Feedback);
+        ep.mix = g (Mix); ep.heat = g (Heat); ep.damping = g (Damping);
+        ep.type = juce::roundToInt (g (EchoType));
+        ep.panic = panic;
+        if (filtOn && route == 0) { ep.cutoff = cutoff; ep.resonance = res; ep.filterMode = fmode; }
+        else { ep.cutoff = 18000.0f; ep.resonance = 0.1f; ep.filterMode = 0; }
+        echo.process (l, r, n, ep);
+    }
+    else if (echoWasOn) echo.reset();
+    echoWasOn = echoOn;
+
+    // --- rhythm delay --------------------------------------------------------
+    const bool dlyOn = g (DlyOn) > 0.5f;
+    if (dlyOn)
+    {
+        static const double dbeats[] = { 0.25, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0 };
+        riddim::RhythmDelay::Params dp;
+        dp.delaySamples = (float) (60.0 / bpm * dbeats[juce::jlimit (0, 6, juce::roundToInt (g (DlyDiv)))] * sr);
+        dp.feedback = g (DlyFeedback); dp.mix = g (DlyMix); dp.type = juce::roundToInt (g (DlyType));
+        delay.process (l, r, n, dp);
+    }
+    else if (delayWasOn) delay.reset();
+    delayWasOn = dlyOn;
+
+    // --- modulation ----------------------------------------------------------
+    const bool modOn = g (ModOn) > 0.5f;
+    if (modOn)
+    {
+        riddim::ModStage::Params mp;
+        mp.type = juce::roundToInt (g (ModType)); mp.rate = g (ModRate); mp.depth = g (ModDepth); mp.mix = g (ModMix);
+        mod.process (l, r, n, mp);
+    }
+    else if (modWasOn) mod.reset();
+    modWasOn = modOn;
+
+    // --- reverb --------------------------------------------------------------
+    const bool revOn = g (RevOn) > 0.5f;
+    if (revOn)
+    {
+        riddim::ReverbStage::Params rv;
+        rv.type = juce::roundToInt (g (RevType)); rv.preMs = g (RevPre); rv.decay = g (RevDecay); rv.mix = g (RevMix);
+        reverb.process (l, r, n, rv);
+    }
+    else if (revWasOn) reverb.reset();
+    revWasOn = revOn;
+
+    // --- analog tone + output gain ------------------------------------------
+    const bool analog = g (Analog) > 0.5f;
+    for (int i = 0; i < n; ++i)
+    {
+        float a = l[i], b = r[i];
+        if (analog)
+        {
+            a = riddim::softSat (anaHigh[0].process (anaLow[0].process (a)), 0.12f);
+            b = riddim::softSat (anaHigh[1].process (anaLow[1].process (b)), 0.12f);
+        }
+        const float og = outGainS.getNextValue();
+        l[i] = a * og; r[i] = b * og;
+    }
+
+    // --- master limiter (always the Master tab's settings: final safety stage)
+    float lgr = 0.0f;
+    if (raw (Master, LimOn) > 0.5f)
+    {
+        riddim::Limiter::Params lp;
+        lp.threshDb = raw (Master, LimThresh); lp.releaseMs = raw (Master, LimRelease);
+        lp.ceilingDb = raw (Master, LimCeiling); lp.soft = raw (Master, LimSoft) > 0.5f;
+        lgr = limiter.process (l, r, n, lp);
+    }
+    limGr.store (lgr);
 }
 
 juce::AudioProcessorEditor* RiddimLabAudioProcessor::createEditor()

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(RiddimLab VERSION 0.4.0)
+project(RiddimLab VERSION 2.0.0)
 
 include(FetchContent)
 FetchContent_Declare(JUCE
@@ -9,12 +9,13 @@ FetchContent_Declare(JUCE
 )
 FetchContent_MakeAvailable(JUCE)
 
-# Only the header artwork (logo + title) is embedded. Panels, knobs, meters and
-# tape reels are drawn in code, so they stay sharp at any display scale.
-juce_add_binary_data(RiddimLabArtwork
-    SOURCES
-        Assets/Artwork/header_art.png
-)
+# All bitmaps (textures, knobs, meter faces, reels, thumbnails, header art) and the
+# fonts (SIL Open Font Licence, see Resources/licenses) are embedded in the plugin.
+# Resources/*.png are produced by Tools/gen_assets.py.
+file(GLOB RIDDIM_RESOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/Resources/*.png
+    ${CMAKE_CURRENT_SOURCE_DIR}/Resources/*.ttf)
+juce_add_binary_data(RiddimLabArtwork SOURCES ${RIDDIM_RESOURCES})
 
 juce_add_plugin(RiddimLab
 
@@ -36,6 +37,9 @@ target_sources(RiddimLab PRIVATE
     Source/PluginProcessor.h
     Source/PluginEditor.cpp
     Source/PluginEditor.h
+    Source/RiddimDSP.h
+    Source/RiddimParams.h
+    Source/RiddimUI.h
 )
 target_compile_features(RiddimLab PUBLIC cxx_std_17)
 target_compile_definitions(RiddimLab PUBLIC

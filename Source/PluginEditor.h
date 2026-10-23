@@ -1,136 +1,93 @@
 #pragma once
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "RiddimUI.h"
 
-//==============================================================================
-// Look and feel: brass knobs, lamp switches, metal plate buttons and inset combo
-// boxes. Everything is drawn in code so it stays sharp at any display scale.
-class RiddimLookAndFeel : public juce::LookAndFeel_V4
+// The whole interface lives in MainUI at a fixed 1280 x 900 layout; the editor
+// wraps it and scales it to whatever window size the host gives us.
+class MainUI : public juce::Component, private juce::Timer
 {
 public:
-    RiddimLookAndFeel();
+    explicit MainUI (RiddimLabAudioProcessor&);
+    ~MainUI() override;
 
-    static juce::Font font (float size, bool bold = true);
-
-    void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height,
-                           float sliderPosProportional, float rotaryStartAngle,
-                           float rotaryEndAngle, juce::Slider&) override;
-    void drawToggleButton (juce::Graphics&, juce::ToggleButton&,
-                           bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
-    void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour& backgroundColour,
-                               bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
-    void drawButtonText (juce::Graphics&, juce::TextButton&,
-                         bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
-    void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
-                       int buttonX, int buttonY, int buttonW, int buttonH, juce::ComboBox&) override;
-    juce::Font getComboBoxFont (juce::ComboBox&) override;
-    juce::Font getPopupMenuFont() override;
-    juce::Font getLabelFont (juce::Label&) override;
-};
-
-//==============================================================================
-// Geometry and values for the animated parts (VU meters, LEDs, reels, lamps).
-struct RiddimLiveState
-{
-    juce::Rectangle<int> meterL, meterR, ledStack, reelArea, pathArea;
-    float needle[2] { 0.0f, 0.0f };   // 0..1 smoothed needle position
-    float peak[2]   { 0.0f, 0.0f };   // raw post-processing peak
-    float reelAngle = 0.0f;
-    bool bypassed = false;
-    bool playing = false;
-};
-
-// Transparent overlay that draws only the animated parts. It never takes mouse
-// clicks, so it cannot get in the way of any control.
-class RiddimLiveDisplay : public juce::Component
-{
-public:
-    explicit RiddimLiveDisplay (RiddimLiveState& s) : state (s)
-    {
-        setInterceptsMouseClicks (false, false);
-        setOpaque (false);
-    }
-    void paint (juce::Graphics&) override;
-private:
-    RiddimLiveState& state;
-};
-
-//==============================================================================
-class RiddimLabAudioProcessorEditor : public juce::AudioProcessorEditor, private juce::Timer
-{
-public:
-    explicit RiddimLabAudioProcessorEditor (RiddimLabAudioProcessor&);
-    ~RiddimLabAudioProcessorEditor() override;
-
+    static constexpr int kW = 1280, kH = 900;
     void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
-    using SA = juce::AudioProcessorValueTreeState::SliderAttachment;
-    using BA = juce::AudioProcessorValueTreeState::ButtonAttachment;
-    using CA = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+    struct KnobDef { std::unique_ptr<ui::Knob> k; rp::P p; int fmt; bool echoTime = false; };
+    struct LibItem;
 
-    enum Knob
-    {
-        TapeSat = 0, TapeTone, Wow, Flutter, Wear,
-        Cutoff, Resonance,
-        Time, Feedback, Mix, Heat, Offset, Damping,
-        ChainDrive, ChainTone, ChainComp,
-        GuitarChop, GuitarPick, GuitarBody,
-        NumKnobs
-    };
+    ui::Knob* addKnob (rp::P p, const juce::String& caption, int diameter, int fmt, bool echoTime = false);
+    ui::Lamp* addLamp (std::unique_ptr<ui::Lamp> l);
+    ui::ChoiceLamps* addChoice (std::unique_ptr<ui::ChoiceLamps> c);
+    void place (juce::Component& c, float cx, int top, int w, int h);
 
-    void initKnob (int k);
-    void placeKnob (int k, juce::Rectangle<int> cell);
-    void setKnobVisible (int k, bool visible);
+    void selectTab (int section, int guitarMode, bool writeParams);
+    void rebindAll();
+    void updateEchoTimeBinding();
+    void setInfo (const juce::String&);
 
-    void selectSection (int section, bool notifyHost);
-    void selectGuitarMode (int mode, bool notifyHost);
-    void rebuildChain();
-    void layoutChain();
-    void applyPreset (int index);
-    void updatePresetDisplay();
-
-    void setFloatParam (const char* id, float plainValue);
-    void setBoolParam (const char* id, bool value);
-    void setIntParam (const char* id, int value);
+    // presets
+    void applyFactoryPreset (int index);
+    void applyUserPreset (const juce::File&);
+    void setParam (rp::Sec, rp::P, float);
+    void saveUserPreset();
+    void deleteCurrentPreset();
+    void showLoadMenu();
+    void refreshPresetBox();
+    void stepPreset (int delta);
+    void setCurrentPreset (const juce::String& name, int factoryIndex, const juce::File& file);
+    static juce::File presetFolder();
 
     void timerCallback() override;
 
     RiddimLabAudioProcessor& proc;
+    ui::LookAndFeel look;
+    int sec = 0, gMode = 0;
+    juce::String infoText;
 
-    // Declared first so it is destroyed last.
-    RiddimLookAndFeel look;
+    // layout rectangles
+    juce::Rectangle<int> rHeaderArt, rVuPanel, rPreset, rLibrary, rInfo,
+        rInput, rMeters, rOutput, rFlow, rFilter, rComp, rEq, rTape, rEcho, rReverb, rMod, rDelay, rLimSrc;
 
-    juce::Image headerArt, grain;
-    RiddimLiveState live;
-    RiddimLiveDisplay liveDisplay { live };
+    // widgets
+    juce::TextButton nav[7], sub[3];
+    std::vector<std::unique_ptr<KnobDef>> knobs;
+    std::vector<std::unique_ptr<ui::Lamp>> lamps;
+    std::vector<std::unique_ptr<ui::ChoiceLamps>> choices;
+    ui::Lamp *lSat = nullptr, *lAnalog = nullptr, *lSync = nullptr, *lSoft = nullptr, *lBypass = nullptr, *lThrow = nullptr, *lPanic = nullptr,
+             *pFilt = nullptr, *pComp = nullptr, *pEq = nullptr, *pTape = nullptr, *pEcho = nullptr, *pRev = nullptr, *pMod = nullptr, *pDly = nullptr, *pLim = nullptr, *pSrc = nullptr;
+    ui::Lamp* flow[10] {};
+    ui::ChoiceLamps *cFilterMode = nullptr, *cFilterRoute = nullptr, *cCompMode = nullptr, *cTapeType = nullptr, *cEchoType = nullptr,
+                    *cRevType = nullptr, *cModType = nullptr, *cDlyType = nullptr;
+    std::vector<ui::Knob*> limKnobs, srcKnobs;
+    ui::Knob* echoTimeKnob = nullptr;
 
-    // Layout rectangles, computed once per resize in resized().
-    juce::Rectangle<int> rHeaderArt, rMeters, rPreset, rLibrary,
-                         rTape, rFilter, rEcho, rChain, rPath, rSafety;
+    ui::VuMeter meterL { true, false }, meterR { true, false }, meterIn { false, false }, meterGr { false, true };
+    ui::LedLadder ladder;
+    ui::TapeDeck deck;
+    float needle[4] { 0, 0, 0, 0 };
 
-    int activeSection = 0;
-    int activeGuitarMode = 0;
-    int currentPreset = -1;
-    bool throwHeld = false;
+    juce::ComboBox presetBox;
+    juce::TextButton prevB, nextB, loadB, saveB, delB, browseB;
+    juce::Label presetInfo;
+    std::vector<std::unique_ptr<LibItem>> lib;
+    std::vector<juce::File> userPresets;
+    int currentFactory = -1; juce::File currentUserFile; juce::String currentName;
 
-    juce::TextButton navButtons[7];
-    juce::TextButton guitarModeButtons[3];
-    juce::TextButton libButtons[8];
-    juce::TextButton prevPreset, nextPreset, throwButton;
-    juce::ComboBox presetBox, divisionBox, filterModeBox;
-    juce::ToggleButton syncToggle, bypassToggle, panicToggle;
-    juce::Label presetInfo, divisionLabel, filterTypeLabel;
+    std::unique_ptr<juce::ParameterAttachment> secAtt, modeAtt, syncAtt;
+    bool syncOn = true;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainUI)
+};
 
-    juce::Slider knobs[NumKnobs];
-    juce::Label knobLabels[NumKnobs];
-
-    // Attachments are declared after the controls they reference so they are
-    // destroyed first.
-    std::unique_ptr<SA> knobA[NumKnobs];
-    std::unique_ptr<CA> divisionA, filterModeA;
-    std::unique_ptr<BA> syncA, bypassA, panicA;
-
+class RiddimLabAudioProcessorEditor : public juce::AudioProcessorEditor
+{
+public:
+    explicit RiddimLabAudioProcessorEditor (RiddimLabAudioProcessor&);
+    void resized() override;
+private:
+    MainUI main;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RiddimLabAudioProcessorEditor)
 };

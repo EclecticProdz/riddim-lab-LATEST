@@ -1,1151 +1,757 @@
 #include "PluginEditor.h"
-#include "BinaryData.h"
-#include <array>
+#include "PluginProcessor.h"
 
-//==============================================================================
+using namespace juce;
+using rp::P;
+
 namespace
 {
-    const juce::Colour kBrassHi (0xffe9c36b);
-    const juce::Colour kBrass   (0xffb98538);
-    const juce::Colour kBrassLo (0xff6d4b1d);
-    const juce::Colour kGold    (0xffffd071);
-    const juce::Colour kCream   (0xfff3e5c3);
-    const juce::Colour kMuted   (0xffa5b0a2);
-    const juce::Colour kName    (0xffd9c28a);
-    const juce::Colour kInk     (0xff060a07);
-    const juce::Colour kAmber   (0xffffa726);
+    struct FactoryPreset { const char* name; const char* sub; std::vector<std::pair<P, float>> v; };
 
-    const char* const kSectionIds[7]    { "master", "drums", "guitar", "bass", "keys", "horns", "vocal" };
-    const char* const kSectionNames[7]  { "MASTER", "DRUMS", "GUITAR", "BASS", "KEYS", "HORNS", "VOCAL" };
-    const char* const kToneRole[7]      { "MASTER SHEEN", "ATTACK / BODY", "SKANK / PICK", "LOW-PASS WEIGHT",
-                                          "KEYS SHEEN", "HORN PRESENCE", "VOCAL TONE" };
-
-    struct KnobDef { const char* paramId; const char* name; int fmt; };   // fmt: 0 percent, 1 Hz, 2 ms
-    const KnobDef kKnobDefs[19] =
+    const std::vector<FactoryPreset>& factoryPresets()
     {
-        { "tapeSat",   "SATURATION",     0 }, { "tapeTone", "TAPE TONE", 0 }, { "wow", "WOW", 0 },
-        { "flutter",   "FLUTTER",        0 }, { "wear",     "TAPE WEAR", 0 },
-        { "cutoff",    "CUTOFF",         1 }, { "resonance", "RESONANCE", 0 },
-        { "time",      "FREE TIME",      2 }, { "feedback", "FEEDBACK",  0 }, { "mix", "WET / DRY", 0 },
-        { "drive",     "TAPE HEAT",      0 }, { "width",    "STEREO OFFSET", 0 }, { "damping", "DAMPING", 0 },
-        { nullptr,     "DRIVE",          0 }, { nullptr,    "TONE",      0 }, { nullptr, "COMP", 0 },
-        { "guitarChopTightness",  "CHOP TIGHTNESS",  0 },
-        { "guitarPickBrightness", "PICK BRIGHTNESS", 0 },
-        { "guitarRhythmBody",     "RHYTHM BODY",     0 }
-    };
-
-    // 13 values per preset, in the order of kPresetIds. A value below zero means
-    // "leave this parameter as the user has it".
-    const char* const kPresetIds[13] { "feedback", "mix", "cutoff", "resonance", "drive", "time",
-                                       "tapeSat", "tapeTone", "wow", "flutter", "wear", "width", "damping" };
-    struct PresetDef { const char* name; const char* sub; float v[13]; };
-    const PresetDef kPresets[8] =
-    {
-        { "KINGSTON SESSION",   "Tape warmth, medium echo",
-          { 0.42f, 0.26f, 2800.f, 0.35f, 0.28f, 360.f, 0.18f, 0.72f, 0.05f, 0.04f, 0.10f, -1.f, -1.f } },
-        { "FOUNDATION RIDDIMS", "Filtered skank echo",
-          { 0.52f, 0.31f, 2100.f, 0.48f, 0.36f, 290.f, 0.32f, 0.60f, 0.08f, 0.06f, 0.20f, -1.f, -1.f } },
-        { "ROOTS & CULTURE",    "Dark tape, long repeats",
-          { 0.38f, 0.22f, 3200.f, 0.30f, 0.22f, 420.f, 0.30f, 0.55f, 0.10f, 0.06f, 0.25f, 0.18f, 0.50f } },
-        { "DUB SESSIONS",       "Runaway feedback dub",
-          { 0.74f, 0.36f, 3600.f, 0.62f, 0.45f, 480.f, 0.42f, 0.68f, 0.12f, 0.09f, 0.30f, -1.f, -1.f } },
-        { "LOVERS ROCK",        "Soft, bright repeats",
-          { 0.34f, 0.24f, 4500.f, 0.25f, 0.18f, 520.f, 0.15f, 0.80f, 0.06f, 0.03f, 0.05f, 0.22f, 0.35f } },
-        { "ROCKSTEADY",         "Short, clean slap",
-          { 0.30f, 0.20f, 5200.f, 0.20f, 0.20f, 300.f, 0.22f, 0.70f, 0.04f, 0.03f, 0.08f, 0.10f, 0.40f } },
-        { "DANCEHALL VIBES",    "Bright, quick echoes",
-          { 0.48f, 0.30f, 6500.f, 0.40f, 0.30f, 250.f, 0.20f, 0.85f, 0.03f, 0.02f, 0.00f, 0.25f, 0.30f } },
-        { "VOCAL TOOLS",        "Subtle vocal echo",
-          { 0.32f, 0.22f, 2400.f, 0.22f, 0.12f, 340.f, 0.10f, 0.75f, 0.02f, 0.02f, 0.03f, 0.20f, 0.55f } }
-    };
-
-    void setSliderFormat (juce::Slider& s, int fmt)
-    {
-        if (fmt == 0)
+        static const std::vector<FactoryPreset> f
         {
-            s.textFromValueFunction = [] (double v) { return juce::String (juce::roundToInt (v * 100.0)) + "%"; };
-            s.valueFromTextFunction = [] (const juce::String& t) { return t.getDoubleValue() / 100.0; };
-        }
-        else if (fmt == 1)
-        {
-            s.textFromValueFunction = [] (double v)
-            {
-                return v >= 1000.0 ? juce::String (v / 1000.0, 1) + " kHz" : juce::String (juce::roundToInt (v)) + " Hz";
-            };
-            s.valueFromTextFunction = [] (const juce::String& t)
-            {
-                const double x = t.getDoubleValue();
-                return t.containsIgnoreCase ("k") ? x * 1000.0 : x;
-            };
-        }
-        else
-        {
-            s.textFromValueFunction = [] (double v) { return juce::String (juce::roundToInt (v)) + " ms"; };
-            s.valueFromTextFunction = [] (const juce::String& t) { return t.getDoubleValue(); };
-        }
-        s.updateText();
+            { "KINGSTON SESSION", "Tape warmth, medium echo",
+              { { P::Feedback, 0.42f }, { P::Mix, 0.26f }, { P::Cutoff, 2800 }, { P::Resonance, 0.35f }, { P::Heat, 0.28f }, { P::Division, 2 },
+                { P::TapeSat, 0.18f }, { P::TapeTone, 0.72f }, { P::Wow, 0.05f }, { P::Flutter, 0.04f }, { P::Wear, 0.10f }, { P::TapeType, 1 },
+                { P::RevType, 0 }, { P::RevMix, 0.10f }, { P::RevDecay, 0.40f } } },
+            { "FOUNDATION RIDDIMS", "Filtered skank echo, vintage tape",
+              { { P::Feedback, 0.52f }, { P::Mix, 0.31f }, { P::Cutoff, 2100 }, { P::Resonance, 0.48f }, { P::Heat, 0.36f }, { P::Division, 1 },
+                { P::TapeSat, 0.32f }, { P::TapeTone, 0.60f }, { P::Wow, 0.08f }, { P::Flutter, 0.06f }, { P::Wear, 0.20f }, { P::TapeType, 1 },
+                { P::RevType, 0 }, { P::RevMix, 0.14f }, { P::RevDecay, 0.45f }, { P::CompOn, 1 }, { P::CompThresh, -16 }, { P::CompRatio, 3 }, { P::CompMakeup, 2 } } },
+            { "ROOTS & CULTURE", "Dark worn tape, long repeats",
+              { { P::Feedback, 0.38f }, { P::Mix, 0.22f }, { P::Cutoff, 3200 }, { P::Resonance, 0.30f }, { P::Heat, 0.22f }, { P::Division, 0 },
+                { P::TapeSat, 0.30f }, { P::TapeTone, 0.55f }, { P::Wow, 0.10f }, { P::Flutter, 0.06f }, { P::Wear, 0.25f }, { P::TapeType, 2 },
+                { P::Width, 0.18f }, { P::Damping, 0.50f }, { P::RevType, 1 }, { P::RevMix, 0.12f }, { P::RevDecay, 0.55f } } },
+            { "DUB SESSIONS", "Runaway feedback, dub reverb",
+              { { P::Feedback, 0.74f }, { P::Mix, 0.36f }, { P::Cutoff, 3600 }, { P::Resonance, 0.62f }, { P::Heat, 0.45f }, { P::Division, 5 },
+                { P::TapeSat, 0.42f }, { P::TapeTone, 0.68f }, { P::Wow, 0.12f }, { P::Flutter, 0.09f }, { P::Wear, 0.30f }, { P::TapeType, 1 },
+                { P::RevType, 4 }, { P::RevMix, 0.22f }, { P::RevDecay, 0.70f } } },
+            { "LOVERS ROCK", "Soft, bright repeats with chorus",
+              { { P::Feedback, 0.34f }, { P::Mix, 0.24f }, { P::Cutoff, 4500 }, { P::Resonance, 0.25f }, { P::Heat, 0.18f }, { P::Division, 2 },
+                { P::TapeSat, 0.15f }, { P::TapeTone, 0.80f }, { P::Wow, 0.06f }, { P::Flutter, 0.03f }, { P::Wear, 0.05f }, { P::TapeType, 0 },
+                { P::Width, 0.22f }, { P::Damping, 0.35f }, { P::RevType, 1 }, { P::RevMix, 0.20f }, { P::RevDecay, 0.50f },
+                { P::ModOn, 1 }, { P::ModType, 0 }, { P::ModMix, 0.22f }, { P::ModRate, 0.7f }, { P::ModDepth, 0.5f } } },
+            { "ROCKSTEADY", "Short, clean slap echo",
+              { { P::Feedback, 0.26f }, { P::Mix, 0.20f }, { P::Cutoff, 5200 }, { P::Resonance, 0.20f }, { P::Heat, 0.20f }, { P::Division, 4 }, { P::EchoType, 1 },
+                { P::TapeSat, 0.22f }, { P::TapeTone, 0.70f }, { P::Wow, 0.04f }, { P::Flutter, 0.03f }, { P::Wear, 0.08f }, { P::TapeType, 0 },
+                { P::RevType, 3 }, { P::RevMix, 0.12f }, { P::RevDecay, 0.30f } } },
+            { "DANCEHALL VIBES", "Bright ping-pong echoes",
+              { { P::Feedback, 0.48f }, { P::Mix, 0.30f }, { P::Cutoff, 6500 }, { P::Resonance, 0.40f }, { P::Heat, 0.30f }, { P::Division, 3 }, { P::EchoType, 2 },
+                { P::TapeSat, 0.20f }, { P::TapeTone, 0.85f }, { P::Wow, 0.03f }, { P::Flutter, 0.02f }, { P::Wear, 0.0f }, { P::TapeType, 0 },
+                { P::Width, 0.25f }, { P::Damping, 0.30f }, { P::DlyOn, 1 }, { P::DlyMix, 0.14f }, { P::DlyFeedback, 0.3f }, { P::DlyDiv, 1 },
+                { P::RevType, 3 }, { P::RevMix, 0.10f } } },
+            { "VOCAL TOOLS", "Subtle vocal echo, plate verb",
+              { { P::Feedback, 0.32f }, { P::Mix, 0.22f }, { P::Cutoff, 2400 }, { P::Resonance, 0.22f }, { P::Heat, 0.12f }, { P::Division, 0 },
+                { P::TapeSat, 0.10f }, { P::TapeTone, 0.75f }, { P::Wow, 0.02f }, { P::Flutter, 0.02f }, { P::Wear, 0.03f },
+                { P::Width, 0.20f }, { P::Damping, 0.55f }, { P::RevType, 1 }, { P::RevMix, 0.18f }, { P::RevDecay, 0.45f },
+                { P::CompOn, 1 }, { P::CompThresh, -20 }, { P::CompRatio, 3 }, { P::CompMakeup, 3 }, { P::EqHigh, 1.5f } } },
+            { "MIX TEMPLATES", "Glue, tape and a touch of air",
+              { { P::Feedback, 0.20f }, { P::Mix, 0.08f }, { P::Cutoff, 6000 }, { P::Resonance, 0.2f }, { P::Heat, 0.1f }, { P::Division, 1 },
+                { P::CompOn, 1 }, { P::CompThresh, -14 }, { P::CompRatio, 2 }, { P::CompMakeup, 2 }, { P::CompMode, 0 },
+                { P::EqLow, 1 }, { P::EqHigh, 1.5f }, { P::TapeSat, 0.25f }, { P::TapeType, 0 }, { P::TapeTone, 0.85f },
+                { P::Wow, 0.0f }, { P::Flutter, 0.0f }, { P::Wear, 0.0f }, { P::RevType, 2 }, { P::RevMix, 0.05f }, { P::RevDecay, 0.4f } } }
+        };
+        return f;
     }
 
-    juce::Point<float> polar (juce::Point<float> c, float angle, float radius)
+    String srcHelp (rp::Sec s, int mode, int i)
     {
-        return { c.x + std::sin (angle) * radius, c.y - std::cos (angle) * radius };
-    }
-
-    //------------------------------------------------------------------ panels
-    enum PanelStyle { Green, Brown, Dark };
-
-    void drawWoodFrame (juce::Graphics& g, juce::Rectangle<int> r)
-    {
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff5a361b), 0.0f, (float) r.getY(),
-                                                 juce::Colour (0xff2a170a), 0.0f, (float) r.getBottom(), false));
-        g.fillRect (r);
-        juce::Random rng (1234);
-        for (int i = 0; i < 180; ++i)
+        static const char* drums[3]  { "Boost or soften the front of every hit", "Lengthen or tighten the ring after the hit", "Add stick crack in the upper mids" };
+        static const char* chop[3]   { "How quickly each chord is cut off", "How far the signal drops between chops", "Pick click on the chop" };
+        static const char* pick[3]   { "Lift the pick sound", "Sharpen or soften the pluck", "High-pass the body to thin the guitar" };
+        static const char* rhythm[3] { "Low-mid weight", "Round, saturated top end", "Gentle compression to bind the strum" };
+        static const char* bass[3]   { "Parallel compression on the low end", "Boost the fundamental", "Upper harmonics so it speaks on small speakers" };
+        static const char* keys[3]   { "Top-end air", "Tremolo depth", "Tremolo speed" };
+        static const char* horns[3]  { "Presence around 2.4 kHz", "Weight around 350 Hz", "Round off the top end" };
+        static const char* vocal[3]  { "Tame harsh sibilance", "Add sparkle above 11 kHz", "Chest warmth and a little saturation" };
+        switch (s)
         {
-            const float y = rng.nextFloat() * (float) r.getHeight();
-            const float x = rng.nextFloat() * (float) r.getWidth() - 60.0f;
-            const float len = 80.0f + rng.nextFloat() * 520.0f;
-            g.setColour ((i % 3 == 0 ? juce::Colours::black : juce::Colour (0xff8a5a2c))
-                             .withAlpha (0.05f + rng.nextFloat() * 0.10f));
-            g.drawLine (x, y, x + len, y + (rng.nextFloat() - 0.5f) * 3.0f, 0.6f + rng.nextFloat() * 1.2f);
+            case rp::Drums:  return drums[i];
+            case rp::Guitar: return mode == 0 ? chop[i] : (mode == 1 ? pick[i] : rhythm[i]);
+            case rp::Bass:   return bass[i];
+            case rp::Keys:   return keys[i];
+            case rp::Horns:  return horns[i];
+            case rp::Vocal:  return vocal[i];
+            default:         return {};
         }
     }
 
-    void drawScrew (juce::Graphics& g, juce::Point<float> c, float seed)
+    const char* kHelp (P p)
     {
-        const float r = 4.2f;
-        g.setColour (juce::Colours::black.withAlpha (0.6f));
-        g.fillEllipse (c.x - r, c.y - r + 1.2f, r * 2.0f, r * 2.0f);
-        g.setGradientFill (juce::ColourGradient (kBrassHi, c.x - r, c.y - r, kBrassLo, c.x + r, c.y + r, false));
-        g.fillEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f);
-        g.setColour (kInk.withAlpha (0.85f));
-        g.drawEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f, 0.8f);
-        const float a = seed * 2.4f;
-        g.drawLine (c.x - std::cos (a) * r * 0.7f, c.y - std::sin (a) * r * 0.7f,
-                    c.x + std::cos (a) * r * 0.7f, c.y + std::sin (a) * r * 0.7f, 1.2f);
-    }
-
-    void drawPanel (juce::Graphics& g, juce::Rectangle<int> ri, const juce::String& title,
-                    PanelStyle style, const juce::Image& grain)
-    {
-        const auto r = ri.toFloat();
-        juce::Colour top, bot;
-        if (style == Green)      { top = juce::Colour (0xff23432f); bot = juce::Colour (0xff0e2017); }
-        else if (style == Brown) { top = juce::Colour (0xff4a3320); bot = juce::Colour (0xff22160d); }
-        else                     { top = juce::Colour (0xff14211a); bot = juce::Colour (0xff070d09); }
-
-        g.setColour (juce::Colours::black.withAlpha (0.55f));
-        g.fillRoundedRectangle (r.translated (0.0f, 3.0f), 7.0f);
-        g.setGradientFill (juce::ColourGradient (top, 0.0f, r.getY(), bot, 0.0f, r.getBottom(), false));
-        g.fillRoundedRectangle (r, 7.0f);
-
-        if (grain.isValid())
+        switch (p)
         {
-            g.setTiledImageFill (grain, 0, 0, 1.0f);
-            g.fillRoundedRectangle (r, 7.0f);
+            case P::InGain: return "Level into the processing chain";
+            case P::OutGain: return "Final level after all processing";
+            case P::Cutoff: return "Filter frequency. Sweep it for classic dub filtering";
+            case P::Resonance: return "Filter emphasis at the cutoff";
+            case P::CompThresh: return "Level above which compression starts";
+            case P::CompRatio: return "How hard peaks above the threshold are squashed";
+            case P::CompMakeup: return "Gain added back after compression";
+            case P::EqLow: return "Low shelf at 100 Hz";
+            case P::EqMid: return "Mid bell at 800 Hz";
+            case P::EqHigh: return "High shelf at 7 kHz";
+            case P::EqPres: return "Presence bell at 3.5 kHz";
+            case P::TapeSat: return "Tape saturation and compression";
+            case P::TapeTone: return "Tape head tone: low is dark, high is open";
+            case P::Wow: return "Slow pitch drift, like a tired tape transport";
+            case P::Flutter: return "Fast pitch shimmer";
+            case P::Wear: return "Worn tape: loses highs and adds hiss";
+            case P::Feedback: return "How many repeats the echo makes";
+            case P::Mix: return "Echo level against the dry signal";
+            case P::Heat: return "Saturation inside the echo loop; repeats get dirtier";
+            case P::Width: return "Offsets the right echo time from the left";
+            case P::Damping: return "How fast repeats lose their highs";
+            case P::RevPre: return "Delay before the reverb starts";
+            case P::RevDecay: return "Reverb length";
+            case P::RevMix: return "Reverb level";
+            case P::ModRate: return "Modulation speed";
+            case P::ModDepth: return "Modulation amount";
+            case P::ModMix: return "Modulation level against the dry signal";
+            case P::DlyDiv: return "Tempo-synced time of the second delay";
+            case P::DlyFeedback: return "Repeats of the second delay";
+            case P::DlyMix: return "Second delay level";
+            case P::LimThresh: return "Level where the limiter starts working";
+            case P::LimRelease: return "How fast the limiter lets go";
+            case P::LimCeiling: return "The output can never go above this level";
+            default: return "";
         }
-
-        // soft vignette so panels read as slightly dished
-        g.setGradientFill (juce::ColourGradient (juce::Colours::transparentBlack, r.getCentreX(), r.getCentreY(),
-                                                 juce::Colours::black.withAlpha (0.38f), r.getX(), r.getY(), true));
-        g.fillRoundedRectangle (r, 7.0f);
-
-        // inset shadow + brass trim
-        g.setColour (juce::Colours::black.withAlpha (0.5f));
-        g.drawRoundedRectangle (r.reduced (3.0f), 5.0f, 2.0f);
-        g.setGradientFill (juce::ColourGradient (kBrassHi, r.getX(), r.getY(), kBrassLo, r.getRight(), r.getBottom(), false));
-        g.drawRoundedRectangle (r.reduced (1.0f), 7.0f, 2.0f);
-        g.setColour (juce::Colours::white.withAlpha (0.10f));
-        g.drawRoundedRectangle (r.reduced (3.5f), 5.0f, 0.8f);
-
-        drawScrew (g, { r.getX() + 9.0f,     r.getY() + 9.0f },      1.0f);
-        drawScrew (g, { r.getRight() - 9.0f, r.getY() + 9.0f },      2.0f);
-        drawScrew (g, { r.getX() + 9.0f,     r.getBottom() - 9.0f }, 3.0f);
-        drawScrew (g, { r.getRight() - 9.0f, r.getBottom() - 9.0f }, 4.0f);
-
-        if (title.isNotEmpty())
-        {
-            const auto textArea = juce::Rectangle<int> (ri.getX() + 18, ri.getY() + 9, ri.getWidth() - 36, 22);
-            g.setFont (RiddimLookAndFeel::font (17.0f));
-            g.setColour (juce::Colours::black.withAlpha (0.8f));
-            g.drawText (title, textArea.translated (1, 1), juce::Justification::centredLeft, true);
-            g.setColour (kGold);
-            g.drawText (title, textArea, juce::Justification::centredLeft, true);
-            g.setColour (kBrass.withAlpha (0.35f));
-            g.fillRect (ri.getX() + 18, ri.getY() + 33, ri.getWidth() - 36, 1);
-        }
-    }
-
-    //------------------------------------------------------------------ animated parts
-    void drawVU (juce::Graphics& g, juce::Rectangle<float> r, float needle)
-    {
-        const auto bz = r.expanded (5.0f);
-        g.setColour (juce::Colours::black.withAlpha (0.55f));
-        g.fillRoundedRectangle (bz.translated (0.0f, 2.0f), 8.0f);
-        g.setGradientFill (juce::ColourGradient (kBrassHi, bz.getX(), bz.getY(), kBrassLo, bz.getRight(), bz.getBottom(), false));
-        g.fillRoundedRectangle (bz, 8.0f);
-        g.setColour (juce::Colour (0xff120c06));
-        g.fillRoundedRectangle (bz.reduced (2.5f), 6.5f);
-
-        juce::Graphics::ScopedSaveState saved (g);
-        juce::Path clip;
-        clip.addRoundedRectangle (r, 5.0f);
-        g.reduceClipRegion (clip);
-
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xfffbe7ae), r.getCentreX(), r.getBottom(),
-                                                 juce::Colour (0xffc58d36), r.getX(), r.getY(), true));
-        g.fillRect (r);
-
-        const float px = r.getCentreX();
-        const float py = r.getBottom() + 16.0f;
-        const float R  = r.getHeight();
-        const juce::Point<float> pivot (px, py);
-        auto angleFor = [] (float f) { return juce::jmap (f, 0.0f, 1.0f, -0.92f, 0.92f); };
-        auto fracForDb = [] (float db) { return (db + 40.0f) / 43.0f; };
-
-        // scale arc and red zone
-        juce::Path arc;
-        arc.addCentredArc (px, py, R * 0.86f, R * 0.86f, 0.0f, angleFor (0.0f), angleFor (1.0f), true);
-        g.setColour (juce::Colour (0xff2a1a0c));
-        g.strokePath (arc, juce::PathStrokeType (1.3f));
-        juce::Path red;
-        red.addCentredArc (px, py, R * 0.86f, R * 0.86f, 0.0f, angleFor (fracForDb (-3.0f)), angleFor (1.0f), true);
-        g.setColour (juce::Colour (0xffc2261a));
-        g.strokePath (red, juce::PathStrokeType (3.0f));
-
-        struct Tick { float db; const char* label; };
-        const Tick ticks[] = { { -40.0f, "-40" }, { -35.0f, nullptr }, { -30.0f, "-30" }, { -25.0f, nullptr },
-                               { -20.0f, "-20" }, { -15.0f, nullptr }, { -10.0f, "-10" }, { -6.0f, nullptr },
-                               { -3.0f, nullptr }, { 0.0f, "0" }, { 3.0f, nullptr } };
-        g.setFont (RiddimLookAndFeel::font (9.0f));
-        for (auto& t : ticks)
-        {
-            const float a = angleFor (fracForDb (t.db));
-            const bool major = t.label != nullptr;
-            const auto p1 = polar (pivot, a, R * (major ? 0.78f : 0.82f));
-            const auto p2 = polar (pivot, a, R * 0.86f);
-            g.setColour (t.db > -3.5f ? juce::Colour (0xffa32016) : juce::Colour (0xff2a1a0c));
-            g.drawLine (p1.x, p1.y, p2.x, p2.y, major ? 1.5f : 1.0f);
-            if (major)
-            {
-                const auto lp = polar (pivot, a, R * 0.68f);
-                g.drawText (juce::String (t.label), juce::Rectangle<float> (lp.x - 12.0f, lp.y - 6.0f, 24.0f, 12.0f),
-                            juce::Justification::centred, false);
-            }
-        }
-        g.setColour (juce::Colour (0xff2a1a0c));
-        g.setFont (RiddimLookAndFeel::font (10.0f));
-        g.drawText ("PEAK dB", juce::Rectangle<float> (px - 36.0f, r.getBottom() - 28.0f, 72.0f, 12.0f),
-                    juce::Justification::centred, false);
-
-        // needle
-        const float a = angleFor (juce::jlimit (0.0f, 1.0f, needle));
-        const auto tip = polar (pivot, a, R * 0.90f);
-        g.setColour (juce::Colours::black.withAlpha (0.30f));
-        g.drawLine (px + 2.5f, py + 2.0f, tip.x + 2.5f, tip.y + 2.0f, 1.8f);
-        g.setColour (juce::Colour (0xff7a1a10));
-        g.drawLine (px, py, tip.x, tip.y, 1.7f);
-        g.setColour (juce::Colour (0xff2a1a0c));
-        g.fillEllipse (px - 11.0f, py - 11.0f, 22.0f, 22.0f);
-        g.setColour (kBrass);
-        g.drawEllipse (px - 11.0f, py - 11.0f, 22.0f, 22.0f, 1.5f);
-
-        // glass
-        g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.22f), r.getX(), r.getY(),
-                                                 juce::Colours::transparentWhite, r.getX(), r.getCentreY(), false));
-        g.fillRect (r);
-        g.setColour (juce::Colours::black.withAlpha (0.40f));
-        g.drawRoundedRectangle (r, 5.0f, 3.0f);
-    }
-
-    void drawReel (juce::Graphics& g, juce::Point<float> c, float radius, float angle)
-    {
-        g.setColour (juce::Colours::black.withAlpha (0.5f));
-        g.fillEllipse (c.x - radius, c.y - radius + 3.0f, radius * 2.0f, radius * 2.0f);
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xffe0bb70), c.x - radius, c.y - radius,
-                                                 juce::Colour (0xff5c4018), c.x + radius, c.y + radius, false));
-        g.fillEllipse (c.x - radius, c.y - radius, radius * 2.0f, radius * 2.0f);
-
-        const float ir = radius * 0.80f;
-        g.setColour (juce::Colour (0xff0d0a07));
-        g.fillEllipse (c.x - ir, c.y - ir, ir * 2.0f, ir * 2.0f);
-
-        juce::Path wedge;
-        wedge.startNewSubPath (0.0f, 0.0f);
-        wedge.addCentredArc (0.0f, 0.0f, ir * 0.96f, ir * 0.96f, 0.0f, -0.62f, 0.62f, false);
-        wedge.closeSubPath();
-        for (int k = 0; k < 3; ++k)
-        {
-            const auto t = juce::AffineTransform::rotation (angle + (float) k * juce::MathConstants<float>::twoPi / 3.0f)
-                               .translated (c.x, c.y);
-            g.setGradientFill (juce::ColourGradient (juce::Colour (0xffc9a05a), c.x - ir, c.y - ir,
-                                                     juce::Colour (0xff6a4c20), c.x + ir, c.y + ir, false));
-            g.fillPath (wedge, t);
-        }
-        g.setColour (juce::Colour (0xff1a120a));
-        g.fillEllipse (c.x - radius * 0.24f, c.y - radius * 0.24f, radius * 0.48f, radius * 0.48f);
-        g.setColour (kBrass);
-        g.drawEllipse (c.x - radius * 0.24f, c.y - radius * 0.24f, radius * 0.48f, radius * 0.48f, 1.4f);
-        g.setColour (kInk.withAlpha (0.8f));
-        g.drawEllipse (c.x - radius, c.y - radius, radius * 2.0f, radius * 2.0f, 1.2f);
-    }
-
-    void drawLamp (juce::Graphics& g, juce::Point<float> c, float r, float brightness, juce::Colour col)
-    {
-        if (brightness > 0.05f)
-        {
-            g.setGradientFill (juce::ColourGradient (col.withAlpha (0.45f * brightness), c.x, c.y,
-                                                     juce::Colours::transparentBlack, c.x + r * 2.6f, c.y, true));
-            g.fillEllipse (c.x - r * 2.6f, c.y - r * 2.6f, r * 5.2f, r * 5.2f);
-        }
-        const auto lit = col.interpolatedWith (juce::Colour (0xfffff0c0), 0.35f * brightness);
-        const auto dark = juce::Colour (0xff1a1208);
-        g.setGradientFill (juce::ColourGradient (dark.interpolatedWith (lit, brightness), c.x - r, c.y - r,
-                                                 dark.interpolatedWith (col.darker (0.5f), brightness), c.x + r, c.y + r, false));
-        g.fillEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f);
-        g.setColour (kInk);
-        g.drawEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f, 1.2f);
     }
 }
 
 //==============================================================================
-RiddimLookAndFeel::RiddimLookAndFeel()
+struct MainUI::LibItem : public TextButton
 {
-    setColour (juce::PopupMenu::backgroundColourId, juce::Colour (0xff0f1a14));
-    setColour (juce::PopupMenu::textColourId, kCream);
-    setColour (juce::PopupMenu::highlightedBackgroundColourId, kBrass);
-    setColour (juce::PopupMenu::highlightedTextColourId, kInk);
-    setColour (juce::ComboBox::textColourId, kCream);
-    setColour (juce::Slider::textBoxTextColourId, kCream);
-    setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour (0xff0b130e));
-    setColour (juce::Slider::textBoxOutlineColourId, kBrassLo);
-}
-
-juce::Font RiddimLookAndFeel::font (float size, bool bold)
-{
-    return juce::Font (juce::FontOptions ("Avenir Next Condensed", size, bold ? juce::Font::bold : juce::Font::plain));
-}
-
-juce::Font RiddimLookAndFeel::getComboBoxFont (juce::ComboBox&)  { return font (13.5f); }
-juce::Font RiddimLookAndFeel::getPopupMenuFont()                 { return font (14.0f); }
-
-juce::Font RiddimLookAndFeel::getLabelFont (juce::Label& l)
-{
-    if (dynamic_cast<juce::Slider*> (l.getParentComponent()) != nullptr)
-        return font (12.5f);
-    return l.getFont();
-}
-
-void RiddimLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
-                                          float pos, float startAngle, float endAngle, juce::Slider& slider)
-{
-    const bool dim = ! slider.isEnabled();
-    if (dim)
-        g.beginTransparencyLayer (0.45f);
-
-    const juce::Rectangle<float> bounds ((float) x, (float) y, (float) width, (float) height);
-    const float d = juce::jmin (bounds.getWidth(), bounds.getHeight());
-    const auto area = bounds.withSizeKeepingCentre (d, d).reduced (d * 0.03f);
-    const auto c = area.getCentre();
-    const float outerR = area.getWidth() * 0.5f;
-    const float knobR = outerR * 0.66f;
-    const float angle = startAngle + pos * (endAngle - startAngle);
-
-    // scale ticks
-    for (int i = 0; i <= 10; ++i)
+    int index = 0; String name, sub;
+    void paintButton (Graphics& g, bool over, bool down) override
     {
-        const float a = startAngle + (float) i / 10.0f * (endAngle - startAngle);
-        const auto p1 = polar (c, a, outerR * (i % 5 == 0 ? 0.82f : 0.88f));
-        const auto p2 = polar (c, a, outerR * 0.98f);
-        g.setColour (kBrass.withAlpha (0.9f));
-        g.drawLine (p1.x, p1.y, p2.x, p2.y, i % 5 == 0 ? 1.8f : 1.1f);
+        getLookAndFeel().drawButtonBackground (g, *this, Colours::transparentBlack, over, down);
+        auto r = getLocalBounds().toFloat().reduced (3.0f);
+        auto th = r.removeFromLeft (64.0f).withSizeKeepingCentre (64.0f, 46.0f);
+        auto& im = ui::Assets::get().thumbs[index];
+        g.setImageResamplingQuality (Graphics::highResamplingQuality);
+        g.drawImage (im, th);
+        g.setColour (Colours::black.withAlpha (0.8f)); g.drawRect (th, 1.0f);
+        const bool on = getToggleState();
+        r.removeFromLeft (6.0f);
+        auto top = r.removeFromTop (r.getHeight() * 0.46f);
+        ui::engraved (g, name, top.translated (0, 3), ui::font (12.5f, 2, 0.03f), on ? ui::col::amber : ui::col::cream, Justification::centredLeft);
+        g.setFont (ui::font (11.0f, 0, 0.0f));
+        g.setColour (ui::col::creamDim);
+        g.drawFittedText (sub, r.toNearestInt().translated (0, 1), Justification::topLeft, 2, 0.9f);
+    }
+};
+
+//==============================================================================
+MainUI::MainUI (RiddimLabAudioProcessor& p) : proc (p)
+{
+    setLookAndFeel (&look);
+    ui::Assets::get();
+    setBufferedToImage (true);
+    setOpaque (true);
+
+    auto info = [this] (const String& s) { setInfo (s); };
+
+    // ---- nav tabs
+    const char* names[7] { "MASTER", "DRUMS", "GUITAR", "BASS", "KEYS", "HORNS", "VOCAL" };
+    for (int i = 0; i < 7; ++i)
+    {
+        nav[i].setButtonText (names[i]);
+        nav[i].getProperties().set ("role", "nav");
+        nav[i].setClickingTogglesState (false);
+        nav[i].onClick = [this, i] { selectTab (i, gMode, true); };
+        addAndMakeVisible (nav[i]);
+    }
+    const char* subNames[3] { "CHOP", "PICK", "RHYTHM" };
+    for (int i = 0; i < 3; ++i)
+    {
+        sub[i].setButtonText (subNames[i]);
+        sub[i].getProperties().set ("role", "subnav");
+        sub[i].onClick = [this, i] { selectTab (rp::Guitar, i, true); };
+        addAndMakeVisible (sub[i]);
     }
 
-    // value arc
-    juce::Path track;
-    track.addCentredArc (c.x, c.y, outerR * 0.74f, outerR * 0.74f, 0.0f, startAngle, endAngle, true);
-    g.setColour (juce::Colour (0xff050806).withAlpha (0.85f));
-    g.strokePath (track, juce::PathStrokeType (3.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    juce::Path val;
-    val.addCentredArc (c.x, c.y, outerR * 0.74f, outerR * 0.74f, 0.0f, startAngle, angle, true);
-    g.setColour (kAmber);
-    g.strokePath (val, juce::PathStrokeType (2.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-    // drop shadow and skirt
-    g.setColour (juce::Colours::black.withAlpha (0.6f));
-    g.fillEllipse (c.x - knobR, c.y - knobR + knobR * 0.14f, knobR * 2.0f, knobR * 2.0f);
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff3a2a14), c.x - knobR, c.y - knobR,
-                                             juce::Colour (0xff0a0704), c.x + knobR, c.y + knobR, false));
-    g.fillEllipse (c.x - knobR, c.y - knobR, knobR * 2.0f, knobR * 2.0f);
-
-    // brass cap
-    const float capR = knobR * 0.88f;
-    juce::ColourGradient cap (kBrassHi.brighter (0.25f), c.x - capR * 0.6f, c.y - capR * 0.7f,
-                              kBrassLo, c.x + capR * 0.7f, c.y + capR * 0.8f, false);
-    cap.addColour (0.45, kBrass);
-    g.setGradientFill (cap);
-    g.fillEllipse (c.x - capR, c.y - capR, capR * 2.0f, capR * 2.0f);
-    for (int k = 1; k <= 4; ++k)
+    // ---- knobs (captions as in the mockup)
+    using K = P;
+    addKnob (K::InGain, "GAIN", 68, 3);   addKnob (K::OutGain, "LEVEL", 68, 3);
+    addKnob (K::Cutoff, "CUTOFF", 68, 1);  addKnob (K::Resonance, "RESONANCE", 68, 0);
+    addKnob (K::CompThresh, "THRESHOLD", 68, 3); addKnob (K::CompRatio, "RATIO", 68, 4); addKnob (K::CompMakeup, "MAKEUP", 68, 3);
+    addKnob (K::EqLow, "LOW", 58, 3); addKnob (K::EqMid, "MID", 58, 3); addKnob (K::EqHigh, "HIGH", 58, 3); addKnob (K::EqPres, "PRESENCE", 58, 3);
+    addKnob (K::TapeSat, "SATURATE", 46, 0); addKnob (K::TapeTone, "TONE", 46, 0); addKnob (K::Wow, "WOW", 46, 0);
+    addKnob (K::Flutter, "FLUTTER", 46, 0); addKnob (K::Wear, "WEAR", 46, 0);
+    echoTimeKnob = addKnob (K::EchoTime, "TIME", 68, 2, true);
+    addKnob (K::Feedback, "FEEDBACK", 68, 0); addKnob (K::Mix, "MIX", 68, 0);
+    addKnob (K::Heat, "TAPE HEAT", 46, 0); addKnob (K::Width, "OFFSET", 46, 0); addKnob (K::Damping, "DAMPING", 46, 0);
+    addKnob (K::RevPre, "PRE-DELAY", 68, 2); addKnob (K::RevDecay, "DECAY", 68, 0); addKnob (K::RevMix, "MIX", 68, 0);
+    addKnob (K::ModRate, "RATE", 58, 7); addKnob (K::ModDepth, "DEPTH", 58, 0); addKnob (K::ModMix, "MIX", 58, 0);
+    addKnob (K::DlyDiv, "TIME", 58, 5); addKnob (K::DlyFeedback, "FEEDBACK", 58, 0); addKnob (K::DlyMix, "MIX", 58, 0);
+    for (auto k : { K::LimThresh, K::LimRelease, K::LimCeiling })
     {
-        const float rr = capR * (float) k / 5.0f;
-        g.setColour (juce::Colours::white.withAlpha (0.05f));
-        g.drawEllipse (c.x - rr, c.y - rr, rr * 2.0f, rr * 2.0f, 0.6f);
+        auto* kn = addKnob (k, k == K::LimThresh ? "THRESHOLD" : (k == K::LimRelease ? "RELEASE" : "CEILING"), 58, k == K::LimRelease ? 2 : 3);
+        limKnobs.push_back (kn);
     }
-    juce::Path highlight;
-    highlight.addCentredArc (c.x, c.y, capR * 0.86f, capR * 0.86f, 0.0f, -2.6f, -0.9f, true);
-    g.setColour (juce::Colours::white.withAlpha (0.38f));
-    g.strokePath (highlight, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    g.setColour (kInk.withAlpha (0.75f));
-    g.drawEllipse (c.x - capR, c.y - capR, capR * 2.0f, capR * 2.0f, 1.2f);
-
-    // pointer
-    juce::Path pointer;
-    pointer.addRoundedRectangle (-1.9f, -capR * 0.86f, 3.8f, capR * 0.46f, 1.5f);
-    const auto xf = juce::AffineTransform::rotation (angle).translated (c.x, c.y);
-    g.setColour (juce::Colours::black.withAlpha (0.35f));
-    g.fillPath (pointer, xf.translated (0.8f, 1.2f));
-    g.setColour (juce::Colour (0xff1a0f05));
-    g.fillPath (pointer, xf);
-
-    if (dim)
-        g.endTransparencyLayer();
-}
-
-void RiddimLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& b,
-                                          bool highlighted, bool)
-{
-    const auto r = b.getLocalBounds().toFloat();
-    const auto plate = r.reduced (1.0f);
-    const bool on = b.getToggleState();
-
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff27392e), 0.0f, plate.getY(),
-                                             juce::Colour (0xff101a14), 0.0f, plate.getBottom(), false));
-    g.fillRoundedRectangle (plate, 5.0f);
-    g.setColour (kBrassLo.brighter (highlighted ? 0.45f : 0.1f));
-    g.drawRoundedRectangle (plate, 5.0f, 1.3f);
-
-    const float ld = juce::jmin (r.getHeight() * 0.5f, 18.0f);
-    const juce::Point<float> lc (plate.getX() + 14.0f + ld * 0.5f, r.getCentreY());
-    drawLamp (g, lc, ld * 0.5f, on ? 1.0f : 0.0f, kAmber);
-
-    g.setColour (on ? kCream : kMuted);
-    g.setFont (font (13.0f));
-    g.drawText (b.getButtonText(), plate.withTrimmedLeft (ld + 28.0f).toNearestInt(),
-                juce::Justification::centredLeft, true);
-}
-
-void RiddimLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour&,
-                                              bool highlighted, bool down)
-{
-    const auto role = b.getProperties()["role"].toString();
-    const auto r = b.getLocalBounds().toFloat().reduced (1.0f);
-    const bool on = b.getToggleState();
-    const float corner = 4.5f;
-
-    juce::Colour top = on ? juce::Colour (0xfff6cf6e) : juce::Colour (0xff273a2f);
-    juce::Colour bot = on ? juce::Colour (0xffb27a28) : juce::Colour (0xff101a14);
-    if (highlighted && ! on) { top = top.brighter (0.18f); bot = bot.brighter (0.12f); }
-    if (down) { top = top.darker (0.25f); bot = bot.darker (0.25f); }
-
-    g.setColour (juce::Colours::black.withAlpha (0.5f));
-    g.fillRoundedRectangle (r.translated (0.0f, 1.5f), corner);
-    g.setGradientFill (juce::ColourGradient (top, 0.0f, r.getY(), bot, 0.0f, r.getBottom(), false));
-    g.fillRoundedRectangle (r, corner);
-    g.setColour (juce::Colours::white.withAlpha (on ? 0.35f : 0.08f));
-    g.drawRoundedRectangle (r.reduced (1.2f), corner, 1.0f);
-    g.setColour (on ? kBrassLo.darker() : kBrassLo.brighter (0.15f));
-    g.drawRoundedRectangle (r, corner, 1.3f);
-    if (on && role != "lib")
+    for (int i = 0; i < 3; ++i) srcKnobs.push_back (addKnob (K::Src1, "", 58, 0));
+    // the three source knobs are distinguished by index (their parameter changes with the tab)
     {
-        g.setColour (kGold.withAlpha (0.20f));
-        g.drawRoundedRectangle (r.expanded (1.5f), corner + 1.0f, 2.0f);
+        int idx = 0;
+        for (auto& kd : knobs) if (kd->p == K::Src1) { kd->p = (P) ((int) K::Src1 + idx); ++idx; }   // placeholder order; rebound in rebindAll
+    }
+    for (auto& kd : knobs) { kd->k->onInfo = info; if (kd->p < K::Src1 || kd->p > K::Src9) kd->k->help = kHelp (kd->p); }
+
+    // ---- lamps and choices
+    lSat = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::LampLabelRight, "SATURATION", 5.5f));
+    lAnalog = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::LampLabelRight, "ANALOG TONE", 5.5f));
+    lSync = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::LampLabelRight, "TEMPO SYNC", 5.5f));
+    lSoft = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::Plate, "SOFT CLIP"));
+    lBypass = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::Plate, "BYPASS"));
+    lThrow = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::Momentary, "THROW"));
+    lPanic = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::Momentary, "PANIC"));
+    auto pw = [&] { return addLamp (std::make_unique<ui::Lamp> (ui::Lamp::LampOnly, "", 5.0f)); };
+    pFilt = pw(); pComp = pw(); pEq = pw(); pTape = pw(); pEcho = pw(); pRev = pw(); pMod = pw(); pDly = pw(); pLim = pw(); pSrc = pw();
+    for (int i = 0; i < 10; ++i) flow[i] = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::LampOnly, "", 7.0f));
+    lSat->onInfo = lAnalog->onInfo = lSync->onInfo = lSoft->onInfo = lBypass->onInfo = lThrow->onInfo = lPanic->onInfo = info;
+
+    cFilterMode  = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "LOW-PASS", "HIGH-PASS", "BAND-PASS" }, true, 12.5f));
+    cFilterRoute = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "ECHO", "INPUT" }, false, 12.0f));
+    cCompMode    = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "GENTLE", "PUNCH", "LIMIT" }, true, 12.5f));
+    cTapeType    = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "CLEAN", "VINTAGE", "WORN" }, false, 12.0f));
+    cEchoType    = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "TAPE", "DIGITAL", "PING-PONG" }, true, 12.5f));
+    cRevType     = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "SPRING", "PLATE", "HALL", "ROOM", "DUB" }, false, 13.0f));
+    cModType     = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "CHORUS", "PHASER", "FLANGER" }, true, 12.5f));
+    cDlyType     = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "ANALOG", "DIGITAL", "PING-PONG" }, true, 12.5f));
+
+    // ---- meters
+    for (auto* m : { &meterL, &meterR, &meterIn, &meterGr }) addAndMakeVisible (m);
+    addAndMakeVisible (ladder);
+    addAndMakeVisible (deck);
+
+    // ---- library + presets
+    const auto& fp = factoryPresets();
+    for (int i = 0; i < (int) fp.size(); ++i)
+    {
+        auto it = std::make_unique<LibItem>();
+        it->index = i; it->name = fp[(size_t) i].name; it->sub = fp[(size_t) i].sub;
+        it->getProperties().set ("role", "lib");
+        it->setClickingTogglesState (true); it->setRadioGroupId (7423);
+        it->onClick = [this, i] { applyFactoryPreset (i); };
+        addAndMakeVisible (*it);
+        lib.push_back (std::move (it));
+    }
+    presetBox.setTextWhenNothingSelected ("INIT");
+    presetBox.setJustificationType (Justification::centredLeft);
+    presetBox.onChange = [this]
+    {
+        const int id = presetBox.getSelectedId();
+        if (id >= 1 && id <= (int) factoryPresets().size()) applyFactoryPreset (id - 1);
+        else if (id >= 101 && id - 101 < (int) userPresets.size()) applyUserPreset (userPresets[(size_t) (id - 101)]);
+    };
+    addAndMakeVisible (presetBox);
+    struct B { TextButton* b; const char* t; std::function<void()> f; };
+    for (auto& b : std::initializer_list<B> {
+            { &prevB, "<", [this] { stepPreset (-1); } }, { &nextB, ">", [this] { stepPreset (1); } },
+            { &loadB, "LOAD", [this] { showLoadMenu(); } }, { &saveB, "SAVE", [this] { saveUserPreset(); } },
+            { &delB, "DELETE", [this] { deleteCurrentPreset(); } }, { &browseB, "BROWSE", [this] { auto d = presetFolder(); d.createDirectory(); d.revealToUser(); } } })
+    {
+        b.b->setButtonText (b.t); b.b->getProperties().set ("role", "brass"); b.b->onClick = b.f; addAndMakeVisible (*b.b);
+    }
+    presetInfo.setFont (ui::font (13.0f, 1)); presetInfo.setColour (Label::textColourId, ui::col::creamDim);
+    presetInfo.setJustificationType (Justification::centredLeft); presetInfo.setInterceptsMouseClicks (false, false);
+    addAndMakeVisible (presetInfo);
+
+    // ---- state: tab + sync
+    secAtt = std::make_unique<ParameterAttachment> (*proc.parameters.getParameter ("activeSection"), [this] (float v) { if (roundToInt (v) != sec) selectTab (roundToInt (v), gMode, false); });
+    modeAtt = std::make_unique<ParameterAttachment> (*proc.parameters.getParameter ("guitarMode"), [this] (float v) { if (roundToInt (v) != gMode) selectTab (sec, roundToInt (v), false); });
+    sec = jlimit (0, 6, roundToInt (proc.parameters.getRawParameterValue ("activeSection")->load()));
+    gMode = jlimit (0, 2, roundToInt (proc.parameters.getRawParameterValue ("guitarMode")->load()));
+    selectTab (sec, gMode, false);
+
+    refreshPresetBox();
+    setCurrentPreset (proc.parameters.state.getProperty ("presetName", "").toString(), -1, {});
+    setSize (kW, kH);
+    startTimerHz (30);
+}
+
+MainUI::~MainUI()
+{
+    stopTimer();
+    secAtt.reset(); modeAtt.reset(); syncAtt.reset();
+    knobs.clear(); lamps.clear(); choices.clear();
+    setLookAndFeel (nullptr);
+}
+
+ui::Knob* MainUI::addKnob (P p, const String& caption, int diameter, int fmt, bool echoTime)
+{
+    auto kd = std::make_unique<KnobDef>();
+    kd->k = std::make_unique<ui::Knob> (caption, diameter); kd->p = p; kd->fmt = fmt; kd->echoTime = echoTime;
+    addAndMakeVisible (*kd->k);
+    auto* raw = kd->k.get();
+    knobs.push_back (std::move (kd));
+    return raw;
+}
+ui::Lamp* MainUI::addLamp (std::unique_ptr<ui::Lamp> l) { addAndMakeVisible (*l); lamps.push_back (std::move (l)); return lamps.back().get(); }
+ui::ChoiceLamps* MainUI::addChoice (std::unique_ptr<ui::ChoiceLamps> c) { addAndMakeVisible (*c); choices.push_back (std::move (c)); return choices.back().get(); }
+
+void MainUI::setInfo (const String& s) { if (s != infoText) { infoText = s; repaint (rInfo); } }
+
+//------------------------------------------------------------------ tab handling and binding
+void MainUI::selectTab (int section, int guitarMode, bool writeParams)
+{
+    sec = jlimit (0, 6, section); gMode = jlimit (0, 2, guitarMode);
+    if (writeParams)
+    {
+        for (auto [id, v] : { std::pair<const char*, int> { "activeSection", sec }, { "guitarMode", gMode } })
+            if (auto* prm = proc.parameters.getParameter (id)) { prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->convertTo0to1 ((float) v)); prm->endChangeGesture(); }
+    }
+    for (int i = 0; i < 7; ++i) nav[i].setToggleState (i == sec, dontSendNotification);
+    for (int i = 0; i < 3; ++i) sub[i].setToggleState (sec == rp::Guitar && i == gMode, dontSendNotification);
+    rebindAll();
+    repaint();
+}
+
+void MainUI::updateEchoTimeBinding()
+{
+    const auto s = (rp::Sec) sec;
+    for (auto& kd : knobs)
+        if (kd->echoTime)
+        {
+            const bool sync = proc.parameters.getRawParameterValue (rp::id (s, P::Sync))->load() > 0.5f;
+            syncOn = sync;
+            if (sync) kd->k->bind (proc.parameters, rp::id (s, P::Division), 5, rp::defaultValue (s, P::Division), rp::choiceList (P::Division));
+            else      kd->k->bind (proc.parameters, rp::id (s, P::EchoTime), 2, rp::defaultValue (s, P::EchoTime));
+            kd->k->help = sync ? "Echo time as a note length, locked to the host tempo" : "Echo time in milliseconds (tempo sync is off)";
+        }
+}
+
+void MainUI::rebindAll()
+{
+    const auto s = (rp::Sec) sec;
+    auto idOf = [&] (P p) { return rp::exists (s, p) ? rp::id (s, p) : String(); };
+    const auto src = rp::sourceInfo (s, gMode);
+    int srcIdx = 0;
+    for (auto& kd : knobs)
+    {
+        if (kd->echoTime) continue;
+        P p = kd->p;
+        if (p >= P::Src1 && p <= P::Src9)
+        {
+            // source knobs: i-th source knob of the current tab/mode
+            const int i = srcIdx++;
+            p = rp::sourceParam (s, gMode, i);
+            kd->k->setCaption (s == rp::Master ? String() : String (src.names[i]));
+            kd->k->help = srcHelp (s, gMode, i);
+            kd->k->bind (proc.parameters, idOf (p), 0, rp::defaultValue (s, p));
+            kd->k->setVisible (s != rp::Master);
+            continue;
+        }
+        const bool isLim = (p == P::LimThresh || p == P::LimRelease || p == P::LimCeiling);
+        kd->k->setVisible (isLim ? s == rp::Master : true);
+        kd->k->bind (proc.parameters, idOf (p), kd->fmt, rp::defaultValue (s, p),
+                     p == P::DlyDiv ? rp::choiceList (P::DlyDiv) : StringArray());
+    }
+    updateEchoTimeBinding();
+
+    auto bindL = [&] (ui::ParamWidget* w, P p) { w->bindParam (proc.parameters, idOf (p)); };
+    bindL (lSat, P::InSat); bindL (lAnalog, P::Analog); bindL (lSync, P::Sync);
+    lSoft->bindParam (proc.parameters, rp::id (rp::Master, P::LimSoft)); lSoft->setVisible (s == rp::Master);
+    lBypass->bindParam (proc.parameters, "bypass"); lThrow->bindParam (proc.parameters, "throw"); lPanic->bindParam (proc.parameters, "panic");
+    bindL (pFilt, P::FiltOn); bindL (pComp, P::CompOn); bindL (pEq, P::EqOn); bindL (pTape, P::TapeOn); bindL (pEcho, P::EchoOn);
+    bindL (pRev, P::RevOn); bindL (pMod, P::ModOn); bindL (pDly, P::DlyOn);
+    pLim->bindParam (proc.parameters, rp::id (rp::Master, P::LimOn)); pLim->setVisible (s == rp::Master);
+    bindL (pSrc, P::SrcOn); pSrc->setVisible (s != rp::Master);
+    const P order[10] { P::SrcOn, P::FiltOn, P::CompOn, P::EqOn, P::TapeOn, P::EchoOn, P::DlyOn, P::ModOn, P::RevOn, P::LimOn };
+    for (int i = 0; i < 10; ++i)
+        flow[i]->bindParam (proc.parameters, i == 9 ? rp::id (rp::Master, P::LimOn) : idOf (order[i]));
+    bindL (cFilterMode, P::FilterMode); bindL (cFilterRoute, P::FilterRoute); bindL (cCompMode, P::CompMode); bindL (cTapeType, P::TapeType);
+    bindL (cEchoType, P::EchoType); bindL (cRevType, P::RevType); bindL (cModType, P::ModType); bindL (cDlyType, P::DlyType);
+
+    syncAtt.reset();
+    syncAtt = std::make_unique<ParameterAttachment> (*proc.parameters.getParameter (rp::id (s, P::Sync)), [this] (float v) { if ((v > 0.5f) != syncOn) updateEchoTimeBinding(); });
+}
+
+//------------------------------------------------------------------ layout
+void MainUI::place (Component& c, float cx, int top, int w, int h) { c.setBounds (roundToInt (cx - w * 0.5f), top, w, h); }
+
+void MainUI::resized()
+{
+    rHeaderArt = { 16, 12, 568, 138 };
+    rVuPanel = { 592, 12, 408, 138 };
+    rPreset  = { 1008, 12, 258, 138 };
+    rLibrary = { 14, 156, 192, 692 };
+    rInfo    = { 14, 856, 1252, 28 };
+    const int x0 = 214;
+    rInput  = { x0, 208, 156, 146 };       rMeters = { x0 + 164, 208, 432, 146 };
+    rOutput = { x0 + 604, 208, 156, 146 }; rFlow = { x0 + 768, 208, 284, 146 };
+    rFilter = { x0, 362, 328, 130 };       rComp = { x0 + 336, 362, 400, 130 };      rEq = { x0 + 744, 362, 308, 130 };
+    rTape   = { x0, 500, 346, 210 };       rEcho = { x0 + 354, 500, 392, 210 };      rReverb = { x0 + 754, 500, 298, 210 };
+    rMod    = { x0, 718, 328, 130 };       rDelay = { x0 + 336, 718, 400, 130 };     rLimSrc = { x0 + 744, 718, 308, 130 };
+
+    // nav
+    {
+        const int h = 44, y = 156, g = 6; int x = x0;
+        for (int i = 0; i < 7; ++i)
+        {
+            if (i == rp::Guitar)
+            {
+                nav[i].setBounds (x, y, 200, 23);
+                for (int k = 0; k < 3; ++k) sub[k].setBounds (x + k * 67, y + 24, 66, 20);
+                x += 200 + g;
+            }
+            else { nav[i].setBounds (x, y, 136, h); x += 136 + g; }
+        }
+    }
+    auto knobAt = [&] (P p, const Rectangle<int>& panel, float cx, int top)
+    {
+        for (auto& kd : knobs)
+            if (kd->p == p && ! (p >= P::Src1 && p <= P::Src9)) { place (*kd->k, panel.getX() + cx, panel.getY() + top, kd->k->preferredWidth(), kd->k->preferredHeight()); return; }
+    };
+    auto lampAt = [&] (Component* c, const Rectangle<int>& panel, int x, int y, int w, int h) { c->setBounds (panel.getX() + x, panel.getY() + y, w, h); };
+    auto power  = [&] (ui::Lamp* l, const Rectangle<int>& panel) { l->setBounds (panel.getX() + 14, panel.getY() + 4, 20, 20); };
+
+    // Row A
+    knobAt (P::InGain, rInput, 78, 28);   lampAt (lSat, rInput, 24, 126, 112, 18);
+    knobAt (P::OutGain, rOutput, 78, 28); lampAt (lAnalog, rOutput, 14, 126, 130, 18);
+    meterIn.setBounds (rMeters.getX() + 10, rMeters.getY() + 6, 200, 122);
+    meterGr.setBounds (rMeters.getRight() - 210, rMeters.getY() + 6, 200, 122);
+    {   // signal flow
+        for (int i = 0; i < 10; ++i)
+        {
+            const int row = i / 5, col = i % 5;
+            const float cx = rFlow.getX() + 30 + col * 56.0f; const int cy = rFlow.getY() + (row == 0 ? 50 : 86);
+            flow[i]->setBounds (roundToInt (cx) - 11, cy - 11, 22, 22);
+        }
+        const int by = rFlow.getY() + 110, bw = 82;
+        lBypass->setBounds (rFlow.getX() + 12, by, bw, 26); lThrow->setBounds (rFlow.getX() + 12 + bw + 6, by, bw, 26); lPanic->setBounds (rFlow.getX() + 12 + 2 * (bw + 6), by, bw, 26);
+    }
+    // Row B
+    power (pFilt, rFilter); power (pComp, rComp); power (pEq, rEq);
+    knobAt (P::Cutoff, rFilter, 54, 30);  knobAt (P::Resonance, rFilter, 142, 30);
+    lampAt (cFilterMode, rFilter, 214, 52, 106, 51); lampAt (cFilterRoute, rFilter, 214, 5, 108, 20);
+    knobAt (P::CompThresh, rComp, 54, 30); knobAt (P::CompRatio, rComp, 142, 30); knobAt (P::CompMakeup, rComp, 230, 30);
+    lampAt (cCompMode, rComp, 302, 46, 90, 51);
+    { const float cxs[4] { 42, 116, 190, 264 }; const P ps[4] { P::EqLow, P::EqMid, P::EqHigh, P::EqPres };
+      for (int i = 0; i < 4; ++i) knobAt (ps[i], rEq, cxs[i] + 2, 32); }
+    // Row C
+    power (pTape, rTape); power (pEcho, rEcho); power (pRev, rReverb);
+    lampAt (cTapeType, rTape, 180, 5, 156, 20);
+    deck.setBounds (rTape.getX() + 8, rTape.getY() + 32, 330, 96);
+    { const float cxs[5] { 48, 111, 174, 237, 300 }; const P ps[5] { P::TapeSat, P::TapeTone, P::Wow, P::Flutter, P::Wear };
+      for (int i = 0; i < 5; ++i) knobAt (ps[i], rTape, cxs[i] + 0, 130); }
+    for (auto& kd : knobs) if (kd->echoTime) place (*kd->k, rEcho.getX() + 52, rEcho.getY() + 30, kd->k->preferredWidth(), kd->k->preferredHeight());
+    knobAt (P::Feedback, rEcho, 140, 30); knobAt (P::Mix, rEcho, 228, 30);
+    knobAt (P::Heat, rEcho, 52, 130); knobAt (P::Width, rEcho, 140, 130); knobAt (P::Damping, rEcho, 228, 130);
+    lampAt (cEchoType, rEcho, 292, 60, 96, 51); lampAt (lSync, rEcho, 292, 126, 100, 18);
+    knobAt (P::RevPre, rReverb, 56, 30); knobAt (P::RevDecay, rReverb, 150, 30); knobAt (P::RevMix, rReverb, 244, 30);
+    lampAt (cRevType, rReverb, 14, 156, 270, 24);
+    // Row D
+    power (pMod, rMod); power (pDly, rDelay); power (pLim, rLimSrc); power (pSrc, rLimSrc);
+    knobAt (P::ModRate, rMod, 46, 30); knobAt (P::ModDepth, rMod, 124, 30); knobAt (P::ModMix, rMod, 202, 30);
+    lampAt (cModType, rMod, 240, 48, 84, 51);
+    knobAt (P::DlyDiv, rDelay, 46, 30); knobAt (P::DlyFeedback, rDelay, 124, 30); knobAt (P::DlyMix, rDelay, 202, 30);
+    lampAt (cDlyType, rDelay, 288, 48, 106, 51);
+    { const float cxs[3] { 46, 120, 194 };
+      for (int i = 0; i < 3; ++i)
+      {
+          place (*limKnobs[(size_t) i], rLimSrc.getX() + cxs[i], rLimSrc.getY() + 30, limKnobs[(size_t) i]->preferredWidth(), limKnobs[(size_t) i]->preferredHeight());
+          place (*srcKnobs[(size_t) i], rLimSrc.getX() + cxs[i], rLimSrc.getY() + 30, srcKnobs[(size_t) i]->preferredWidth(), srcKnobs[(size_t) i]->preferredHeight());
+      } }
+    lampAt (lSoft, rLimSrc, 232, 54, 70, 28);
+
+    // header
+    meterL.setBounds (rVuPanel.getX() + 8, rVuPanel.getY() + 12, 160, 100);
+    meterR.setBounds (rVuPanel.getRight() - 168, rVuPanel.getY() + 12, 160, 100);
+    ladder.setBounds (rVuPanel.getCentreX() - 18, rVuPanel.getY() + 14, 36, 96);
+    {
+        auto r = rPreset.reduced (12, 0);
+        presetBox.setBounds (r.getX(), rPreset.getY() + 34, r.getWidth() - 62, 30);
+        prevB.setBounds (r.getRight() - 58, rPreset.getY() + 34, 28, 30); nextB.setBounds (r.getRight() - 28, rPreset.getY() + 34, 28, 30);
+        const int bw = (r.getWidth() - 3 * 4) / 4;
+        Button* bs[4] { &loadB, &saveB, &delB, &browseB };
+        for (int i = 0; i < 4; ++i) bs[i]->setBounds (r.getX() + i * (bw + 4), rPreset.getY() + 74, bw, 28);
+        presetInfo.setBounds (r.getX(), rPreset.getY() + 108, r.getWidth(), 22);
+    }
+    // library
+    {
+        auto r = rLibrary.reduced (8, 0).withTrimmedTop (38);
+        for (auto& it : lib) it->setBounds (r.removeFromTop (62)), r.removeFromTop (3);
     }
 }
 
-void RiddimLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& b, bool, bool)
+//------------------------------------------------------------------ painting (cached; the live parts are child components)
+void MainUI::paint (Graphics& g)
 {
-    auto r = b.getLocalBounds();
-    const bool on = b.getToggleState();
-    const auto role = b.getProperties()["role"].toString();
+    auto& A = ui::Assets::get();
+    // wood frame + steel back plate
+    g.setTiledImageFill (A.wood, 0, 0, 1.0f); g.fillAll();
+    g.setGradientFill (ColourGradient (Colours::black.withAlpha (0.0f), kW * 0.5f, kH * 0.5f, Colours::black.withAlpha (0.55f), 0, 0, true)); g.fillAll();
+    auto plate = Rectangle<float> (7, 7, kW - 14.0f, kH - 14.0f);
+    g.setColour (Colours::black); g.fillRoundedRectangle (plate.expanded (2), 6);
+    g.setTiledImageFill (A.dark, 0, 0, 1.0f); g.fillRoundedRectangle (plate, 5);
+    g.setGradientFill (ColourGradient (Colours::black.withAlpha (0.0f), kW * 0.5f, kH * 0.4f, Colours::black.withAlpha (0.55f), 0, 0, true)); g.fillRoundedRectangle (plate, 5);
+    g.setColour (ui::col::brass.withAlpha (0.55f)); g.drawRoundedRectangle (plate.reduced (1.0f), 5, 1.4f);
+    for (auto c : { Point<float> (kW * 0.5f, 3.5f), Point<float> (kW * 0.5f, kH - 3.5f) }) ui::drawScrew (g, c, 7.0f, 1);
 
-    if (role == "lib")
+    const float sh = 28.0f;
+    auto P_ = [&] (Rectangle<int> r, const Image& tex, int seed, const String& title, float strip, float inset = 22.0f) { ui::paintPanel (g, r.toFloat(), tex, seed, title, strip, true, inset); };
+
+    // header
+    g.setImageResamplingQuality (Graphics::highResamplingQuality);
+    g.drawImage (A.header, rHeaderArt.toFloat(), RectanglePlacement::centred);
+    P_ (rVuPanel, A.dark, 3, {}, 0);
+    ui::engraved (g, "OUTPUT  LEFT", { (float) rVuPanel.getX() + 8, (float) rVuPanel.getY() + 114, 160, 18 }, ui::font (13, 2, 0.12f), ui::col::cream);
+    ui::engraved (g, "OUTPUT  RIGHT", { (float) rVuPanel.getRight() - 168, (float) rVuPanel.getY() + 114, 160, 18 }, ui::font (13, 2, 0.12f), ui::col::cream);
+    P_ (rPreset, A.green2, 4, "PRESET", 28);
+    // library
+    P_ (rLibrary, A.dark, 5, "LIBRARY", 30);
     {
-        const auto num = b.getProperties()["num"].toString();
-        const auto sub = b.getProperties()["sub"].toString();
-        auto left = r.removeFromLeft (46);
-        g.setColour (on ? kInk : kGold);
-        g.setFont (font (26.0f));
-        g.drawText (num, left, juce::Justification::centred, false);
-        auto text = r.reduced (2, 12);
-        auto nameArea = text.removeFromTop (text.getHeight() / 2);
-        g.setColour (on ? kInk : kCream);
-        g.setFont (font (13.5f));
-        g.drawText (b.getButtonText(), nameArea, juce::Justification::bottomLeft, true);
-        g.setColour (on ? kInk.withAlpha (0.75f) : kMuted);
-        g.setFont (font (11.0f, false));
-        g.drawText (sub, text.withTrimmedTop (2), juce::Justification::topLeft, true);
+        auto plateR = Rectangle<float> ((float) rLibrary.getX() + 10, (float) rLibrary.getBottom() - 74.0f, rLibrary.getWidth() - 20.0f, 62.0f);
+        g.setTiledImageFill (A.brass, 0, 0, 0.5f); g.fillRoundedRectangle (plateR, 3);
+        g.setGradientFill (ColourGradient (Colours::white.withAlpha (0.28f), 0, plateR.getY(), Colours::black.withAlpha (0.45f), 0, plateR.getBottom(), false)); g.fillRoundedRectangle (plateR, 3);
+        g.setColour (Colours::black.withAlpha (0.75f)); g.drawRoundedRectangle (plateR, 3, 1.2f);
+        ui::engraved (g, "ECLECTIC PRODZ", plateR.removeFromTop (34).translated (0, 6), ui::font (21, 3, 0.1f), Colour (0xff2b1b06), Justification::centred, 0.9f);
+        ui::engraved (g, "KINGSTON  SOUND  LABORATORY", plateR, ui::font (11, 2, 0.14f), Colour (0xff3b2808), Justification::centredTop, 0.9f);
+    }
+    // row A
+    P_ (rInput, A.green, 6, "INPUT", sh);  P_ (rOutput, A.green, 7, "OUTPUT", sh);
+    P_ (rMeters, A.dark, 8, {}, 0);
+    ui::engraved (g, "INPUT LEVEL", { (float) rMeters.getX() + 10, (float) rMeters.getBottom() - 17.0f, 200, 14 }, ui::font (12.5f, 2, 0.12f), ui::col::cream);
+    ui::engraved (g, "GAIN REDUCTION", { (float) rMeters.getRight() - 210, (float) rMeters.getBottom() - 17.0f, 200, 14 }, ui::font (12.5f, 2, 0.12f), ui::col::cream);
+    P_ (rFlow, A.green2, 9, "SIGNAL FLOW", sh);
+    {   // cable between lamps, IN / OUT tags
+        const char* lab[10] { "SRC", "FILT", "COMP", "EQ", "TAPE", "ECHO", "DLY", "MOD", "REV", "LIM" };
+        for (int row = 0; row < 2; ++row)
+        {
+            const float y = (float) rFlow.getY() + (row == 0 ? 50 : 86);
+            const float xa = (float) rFlow.getX() + 12, xb = (float) rFlow.getX() + 30 + 4 * 56.0f + 14;
+            g.setColour (Colours::black.withAlpha (0.8f)); g.drawLine (xa, y + 1.0f, xb, y + 1.0f, 3.0f);
+            g.setColour (ui::col::brassDark.withAlpha (0.9f)); g.drawLine (xa, y, xb, y, 1.6f);
+            for (int c = 0; c < 4; ++c) { const float ax = (float) rFlow.getX() + 30 + c * 56.0f + 28.0f; Path t; t.addTriangle (ax - 3, y - 3.5f, ax - 3, y + 3.5f, ax + 3.5f, y); g.setColour (ui::col::brass); g.fillPath (t); }
+            for (int c = 0; c < 5; ++c)
+                ui::engraved (g, lab[row * 5 + c], { (float) rFlow.getX() + 30 + c * 56.0f - 26.0f, y + 12.0f, 52.0f, 14.0f }, ui::font (11.5f, 2, 0.08f), ui::col::cream);
+        }
+    }
+    // row B
+    P_ (rFilter, A.green, 10, "FILTER", sh, 36);   P_ (rComp, A.green, 11, "COMPRESSOR", sh, 36);  P_ (rEq, A.green, 12, "TONE EQ", sh, 36);
+    ui::engraved (g, "TYPE", { (float) rFilter.getX() + 214, (float) rFilter.getY() + 36.0f, 100, 14 }, ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centredLeft);
+    ui::engraved (g, "ROUTE", { (float) rFilter.getX() + 160, (float) rFilter.getY() + 6.0f, 48, 18 }, ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centredRight);
+    ui::engraved (g, "MODE", { (float) rComp.getX() + 302, (float) rComp.getY() + 32.0f, 90, 14 }, ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centredLeft);
+    // row C
+    P_ (rTape, A.brown, 13, "TAPE MACHINE", sh, 36);  P_ (rEcho, A.green, 14, "ECHO", sh, 36);  P_ (rReverb, A.brown, 15, "REVERB", sh, 36);
+    ui::engraved (g, "TYPE", { (float) rEcho.getX() + 292, (float) rEcho.getY() + 44.0f, 90, 14 }, ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centredLeft);
+    ui::engraved (g, "REVERB TYPE", { (float) rReverb.getX() + 14, (float) rReverb.getY() + 140.0f, 150, 14 }, ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centredLeft);
+    // row D
+    P_ (rMod, A.green, 16, "MODULATION", sh, 36);  P_ (rDelay, A.green, 17, "DELAY", sh, 36);
+    ui::engraved (g, "TYPE", { (float) rMod.getX() + 240, (float) rMod.getY() + 32.0f, 84, 14 }, ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centredLeft);
+    ui::engraved (g, "TYPE", { (float) rDelay.getX() + 288, (float) rDelay.getY() + 32.0f, 100, 14 }, ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centredLeft);
+    if (sec == rp::Master) P_ (rLimSrc, A.green, 18, "LIMITER", sh, 36);
+    else P_ (rLimSrc, A.brown, 19, rp::sourceInfo ((rp::Sec) sec, gMode).title, sh, 36);
+    if (sec != rp::Master)
+    {
+        auto r = Rectangle<float> ((float) rLimSrc.getX() + 228, (float) rLimSrc.getY() + 34, 74, 88);
+        ui::engraved (g, "SOURCE", r.removeFromTop (14), ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centred);
+        ui::engraved (g, sec == rp::Guitar ? String (gMode == 0 ? "CHOP" : gMode == 1 ? "PICK" : "RHYTHM") : String (rp::kSecName[sec]), r.removeFromTop (30), ui::font (13, 2, 0.08f), ui::col::amber, Justification::centred);
+    }
+
+    // info bar
+    {
+        auto r = rInfo.toFloat();
+        ui::paintPanel (g, r, A.dark, 20, {}, 0, false);
+        g.setColour (Colour (0xff050403)); g.fillRoundedRectangle (r.reduced (6, 4), 3);
+        auto in = r.reduced (14, 4);
+        ui::engraved (g, "RIDDIM LAB  |  ECLECTIC PRODZ", in.removeFromLeft (230), ui::font (12.5f, 2, 0.12f), ui::col::brass, Justification::centredLeft);
+        auto right = in.removeFromRight (300);
+        ui::engraved (g, String (rp::kSecName[sec]) + "   LATENCY " + String (proc.getLatencySamples()) + " smp", right, ui::font (12.5f, 2, 0.1f), ui::col::creamDim, Justification::centredRight);
+        ui::engraved (g, infoText.isEmpty() ? String ("Hover a control to see what it does.  Double-click a knob to reset it.") : infoText, in, ui::font (14.0f, 1, 0.03f),
+                      infoText.isEmpty() ? ui::col::creamDim : ui::col::amber, Justification::centredLeft);
+    }
+}
+
+//------------------------------------------------------------------ meters / animation
+void MainUI::timerCallback()
+{
+    auto vu = [] (float peak) { return jlimit (0.0f, 1.04f, ui::vuPos (20.0f * std::log10 (jmax (peak, 1.0e-5f)) + 12.0f)); };
+    auto glide = [] (float& n, float t) { n += (t - n) * (t > n ? 0.35f : 0.10f); return n; };
+    const float oL = proc.getOutputPeak (0), oR = proc.getOutputPeak (1);
+    const float inP = jmax (proc.getInputPeak (0), proc.getInputPeak (1));
+    meterL.setPosition (glide (needle[0], vu (oL)));
+    meterR.setPosition (glide (needle[1], vu (oR)));
+    meterIn.setPosition (glide (needle[2], vu (inP)));
+    const float gr = proc.getCompGainReductionDb() + proc.getLimiterGainReductionDb();
+    needle[3] += (ui::grPos (gr) - needle[3]) * (ui::grPos (gr) > needle[3] ? 0.35f : 0.12f);
+    meterGr.setPosition (needle[3]);
+    ladder.setLevels (oL, oR);
+    deck.setActivity (jmax (oL, oR) > 0.002f);
+}
+
+//------------------------------------------------------------------ presets
+File MainUI::presetFolder()
+{
+    return File::getSpecialLocation (File::userApplicationDataDirectory).getChildFile ("Eclectic Prodz").getChildFile ("Riddim Lab").getChildFile ("Presets");
+}
+
+void MainUI::setParam (rp::Sec s, P p, float v)
+{
+    if (! rp::exists (s, p)) return;
+    if (auto* prm = proc.parameters.getParameter (rp::id (s, p)))
+    {
+        prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->convertTo0to1 (v)); prm->endChangeGesture();
+    }
+}
+
+void MainUI::setCurrentPreset (const String& name, int factoryIndex, const File& file)
+{
+    currentName = name; currentFactory = factoryIndex; currentUserFile = file;
+    proc.parameters.state.setProperty ("presetName", name, nullptr);
+    for (size_t i = 0; i < lib.size(); ++i) lib[i]->setToggleState ((int) i == factoryIndex, dontSendNotification);
+    if (factoryIndex >= 0) presetBox.setSelectedId (factoryIndex + 1, dontSendNotification);
+    else if (file.existsAsFile())
+    {
+        const int idx = userPresets.size() ? (int) (std::find (userPresets.begin(), userPresets.end(), file) - userPresets.begin()) : -1;
+        if (idx >= 0 && idx < (int) userPresets.size()) presetBox.setSelectedId (101 + idx, dontSendNotification); else presetBox.setSelectedId (0, dontSendNotification);
+    }
+    else presetBox.setSelectedId (0, dontSendNotification);
+    if (name.isNotEmpty() && factoryIndex < 0 && ! file.existsAsFile()) presetBox.setText (name, dontSendNotification);
+    presetInfo.setText (factoryIndex >= 0 ? String (factoryIndex + 1).paddedLeft ('0', 2) + " / " + String ((int) factoryPresets().size()).paddedLeft ('0', 2) + "   " + factoryPresets()[(size_t) factoryIndex].sub
+                                         : (name.isEmpty() ? String ("No preset loaded") : (file.existsAsFile() ? String ("User preset") : String ("Session state"))), dontSendNotification);
+}
+
+void MainUI::applyFactoryPreset (int index)
+{
+    const auto& fp = factoryPresets();
+    if (index < 0 || index >= (int) fp.size()) return;
+    const auto s = (rp::Sec) sec;
+    for (int i = 0; i < rp::NumP; ++i)
+    {
+        const auto p = (P) i;
+        if (! rp::exists (s, p) || rp::spec (p).scope == 1 || p == P::InGain || p == P::OutGain) continue;
+        setParam (s, p, rp::defaultValue (s, p));
+    }
+    for (auto& [p, v] : fp[(size_t) index].v) setParam (s, p, v);
+    setCurrentPreset (fp[(size_t) index].name, index, {});
+}
+
+void MainUI::applyUserPreset (const File& f)
+{
+    if (auto xml = parseXML (f))
+    {
+        const auto s = (rp::Sec) sec;
+        for (auto* e : xml->getChildWithTagNameIterator ("P"))
+            for (int i = 0; i < rp::NumP; ++i)
+                if (e->getStringAttribute ("id") == rp::spec ((P) i).id && rp::exists (s, (P) i) && rp::spec ((P) i).scope != 1)
+                    setParam (s, (P) i, (float) e->getDoubleAttribute ("value"));
+        setCurrentPreset (xml->getStringAttribute ("name", f.getFileNameWithoutExtension()), -1, f);
+    }
+}
+
+void MainUI::refreshPresetBox()
+{
+    presetBox.clear (dontSendNotification);
+    const auto& fp = factoryPresets();
+    for (int i = 0; i < (int) fp.size(); ++i) presetBox.addItem (String (i + 1).paddedLeft ('0', 2) + "   " + fp[(size_t) i].name, i + 1);
+    userPresets.clear();
+    auto dir = presetFolder();
+    if (dir.isDirectory())
+    {
+        auto files = dir.findChildFiles (File::findFiles, false, "*.rlpreset");
+        std::sort (files.begin(), files.end(), [] (const File& a, const File& b) { return a.getFileName().compareIgnoreCase (b.getFileName()) < 0; });
+        for (auto& f : files) userPresets.push_back (f);
+    }
+    if (! userPresets.empty())
+    {
+        presetBox.addSeparator();
+        presetBox.addSectionHeading ("USER PRESETS");
+        for (size_t i = 0; i < userPresets.size(); ++i) presetBox.addItem (userPresets[i].getFileNameWithoutExtension(), 101 + (int) i);
+    }
+}
+
+void MainUI::stepPreset (int delta)
+{
+    const int nf = (int) factoryPresets().size(), total = nf + (int) userPresets.size();
+    int cur = currentFactory >= 0 ? currentFactory : (currentUserFile.existsAsFile() ? nf + (int) (std::find (userPresets.begin(), userPresets.end(), currentUserFile) - userPresets.begin()) : -1);
+    cur = cur < 0 ? (delta > 0 ? 0 : total - 1) : (cur + delta + total) % total;
+    if (cur < nf) applyFactoryPreset (cur); else applyUserPreset (userPresets[(size_t) (cur - nf)]);
+}
+
+void MainUI::showLoadMenu()
+{
+    refreshPresetBox();
+    PopupMenu m; PopupMenu fm, um;
+    const auto& fp = factoryPresets();
+    for (int i = 0; i < (int) fp.size(); ++i) fm.addItem (1 + i, fp[(size_t) i].name, true, i == currentFactory);
+    for (size_t i = 0; i < userPresets.size(); ++i) um.addItem (101 + (int) i, userPresets[i].getFileNameWithoutExtension());
+    m.addSubMenu ("Factory", fm);
+    if (! userPresets.empty()) m.addSubMenu ("User", um); else m.addItem (-1, "User (none saved yet)", false);
+    m.showMenuAsync (PopupMenu::Options().withTargetComponent (loadB), [this, safe = SafePointer<MainUI> (this)] (int r)
+    {
+        if (safe == nullptr || r <= 0) return;
+        if (r <= (int) factoryPresets().size()) applyFactoryPreset (r - 1);
+        else if (r >= 101 && r - 101 < (int) userPresets.size()) applyUserPreset (userPresets[(size_t) (r - 101)]);
+    });
+}
+
+void MainUI::saveUserPreset()
+{
+    auto* w = new AlertWindow ("Save preset", String ("Name for this ") + rp::kSecName[sec] + " preset. It saves the settings of the current tab.", MessageBoxIconType::NoIcon, this);
+    w->addTextEditor ("name", currentName.isNotEmpty() && currentFactory < 0 ? currentName : String(), "Preset name");
+    w->addButton ("Save", 1, KeyPress (KeyPress::returnKey));
+    w->addButton ("Cancel", 0, KeyPress (KeyPress::escapeKey));
+    w->enterModalState (true, ModalCallbackFunction::create ([this, safe = SafePointer<MainUI> (this), w] (int result)
+    {
+        std::unique_ptr<AlertWindow> owner (w);
+        if (safe == nullptr || result != 1) return;
+        const auto name = w->getTextEditorContents ("name").trim();
+        if (name.isEmpty()) return;
+        auto dir = presetFolder(); dir.createDirectory();
+        auto file = dir.getChildFile (File::createLegalFileName (name) + ".rlpreset");
+        XmlElement xml ("RiddimPreset");
+        xml.setAttribute ("name", name); xml.setAttribute ("tab", rp::kSecName[sec]); xml.setAttribute ("version", 2);
+        const auto s = (rp::Sec) sec;
+        for (int i = 0; i < rp::NumP; ++i)
+        {
+            const auto p = (P) i;
+            if (! rp::exists (s, p) || rp::spec (p).scope == 1 || p == P::InGain || p == P::OutGain) continue;
+            auto* e = xml.createNewChildElement ("P");
+            e->setAttribute ("id", rp::spec (p).id);
+            e->setAttribute ("value", (double) proc.parameters.getRawParameterValue (rp::id (s, p))->load());
+        }
+        if (xml.writeTo (file)) { refreshPresetBox(); setCurrentPreset (name, -1, file); }
+        else AlertWindow::showMessageBoxAsync (MessageBoxIconType::WarningIcon, "Could not save", "The preset file could not be written to " + file.getFullPathName());
+    }), false);
+}
+
+void MainUI::deleteCurrentPreset()
+{
+    if (! currentUserFile.existsAsFile())
+    {
+        AlertWindow::showMessageBoxAsync (MessageBoxIconType::InfoIcon, "Delete preset", "Only presets you saved yourself can be deleted. Load one of your own presets first, then press DELETE.");
         return;
     }
-
-    float size = 12.5f;
-    if (role == "nav") size = 17.0f;
-    else if (role == "sub") size = 10.5f;
-    else if (role == "arrow") size = 16.0f;
-
-    g.setFont (font (size));
-    if (! on)
-    {
-        g.setColour (juce::Colours::black.withAlpha (0.7f));
-        g.drawText (b.getButtonText(), r.translated (0, 1), juce::Justification::centred, true);
-    }
-    g.setColour (on ? kInk : kCream);
-    g.drawText (b.getButtonText(), r, juce::Justification::centred, true);
-}
-
-void RiddimLookAndFeel::drawComboBox (juce::Graphics& g, int w, int h, bool, int, int, int, int, juce::ComboBox& box)
-{
-    const juce::Rectangle<float> r (0.0f, 0.0f, (float) w, (float) h);
-    const auto rr = r.reduced (0.5f);
-    const float alpha = box.isEnabled() ? 1.0f : 0.45f;
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff09100c), 0.0f, 0.0f,
-                                             juce::Colour (0xff1b2c22), 0.0f, (float) h, false));
-    g.fillRoundedRectangle (rr, 4.0f);
-    g.setColour (kBrass.withAlpha (alpha));
-    g.drawRoundedRectangle (rr, 4.0f, 1.4f);
-    juce::Path arrow;
-    const float cx = (float) w - 15.0f, cy = (float) h * 0.5f;
-    arrow.addTriangle (cx - 5.0f, cy - 2.5f, cx + 5.0f, cy - 2.5f, cx, cy + 3.5f);
-    g.setColour (kGold.withAlpha (alpha));
-    g.fillPath (arrow);
-}
-
-//==============================================================================
-void RiddimLiveDisplay::paint (juce::Graphics& g)
-{
-    drawVU (g, state.meterL.toFloat(), state.needle[0]);
-    drawVU (g, state.meterR.toFloat(), state.needle[1]);
-
-    // peak LED stack
-    {
-        const float peak = juce::jmax (state.peak[0], state.peak[1]);
-        const float db = 20.0f * std::log10 (juce::jmax (peak, 1.0e-5f));
-        const float thresholds[8] { -40.0f, -30.0f, -24.0f, -18.0f, -12.0f, -6.0f, -3.0f, 0.0f };
-        const std::array<juce::Colour, 8> cols { juce::Colour (0xff3ddc57), juce::Colour (0xff3ddc57),
-                                                 juce::Colour (0xff3ddc57), juce::Colour (0xff3ddc57),
-                                                 juce::Colour (0xffffb020), juce::Colour (0xffffb020),
-                                                 juce::Colour (0xffff3b30), juce::Colour (0xffff3b30) };
-        const auto s = state.ledStack;
-        const float segH = ((float) s.getHeight() - 7.0f * 3.0f) / 8.0f;
-        for (int i = 0; i < 8; ++i)
+    const auto file = currentUserFile;
+    AlertWindow::showOkCancelBox (MessageBoxIconType::QuestionIcon, "Delete preset", "Delete \"" + file.getFileNameWithoutExtension() + "\"?", "Delete", "Cancel", this,
+        ModalCallbackFunction::create ([this, safe = SafePointer<MainUI> (this), file] (int r)
         {
-            const float y = (float) s.getBottom() - (float) (i + 1) * segH - (float) i * 3.0f;
-            const bool lit = db >= thresholds[i];
-            g.setColour (lit ? cols[(size_t) i] : cols[(size_t) i].withAlpha (0.18f));
-            g.fillRoundedRectangle ((float) s.getX(), y, (float) s.getWidth(), segH, 1.5f);
-            g.setColour (kInk.withAlpha (0.8f));
-            g.drawRoundedRectangle ((float) s.getX(), y, (float) s.getWidth(), segH, 1.5f, 0.8f);
-        }
-    }
-
-    // tape reels, tape path and head block
-    {
-        const auto a = state.reelArea;
-        const juce::Point<float> c1 ((float) a.getX() + (float) a.getWidth() * 0.26f, (float) a.getY() + 52.0f);
-        const juce::Point<float> c2 ((float) a.getX() + (float) a.getWidth() * 0.74f, (float) a.getY() + 52.0f);
-        const float radius = 42.0f;
-        const juce::Rectangle<float> head ((float) a.getCentreX() - 40.0f, (float) a.getBottom() - 30.0f, 80.0f, 20.0f);
-
-        juce::Path tape;
-        tape.startNewSubPath (c1.x - radius * 0.7f, c1.y + radius * 0.7f);
-        tape.lineTo (head.getX() + 8.0f, head.getY());
-        tape.lineTo (head.getRight() - 8.0f, head.getY());
-        tape.lineTo (c2.x + radius * 0.7f, c2.y + radius * 0.7f);
-        g.setColour (juce::Colour (0xff2a1a0e));
-        g.strokePath (tape, juce::PathStrokeType (2.2f));
-
-        drawReel (g, c1, radius, state.reelAngle);
-        drawReel (g, c2, radius, -state.reelAngle);
-
-        g.setColour (juce::Colours::black.withAlpha (0.5f));
-        g.fillRoundedRectangle (head.translated (0.0f, 2.0f), 4.0f);
-        g.setGradientFill (juce::ColourGradient (kBrassHi, head.getX(), head.getY(), kBrassLo, head.getX(), head.getBottom(), false));
-        g.fillRoundedRectangle (head, 4.0f);
-        g.setColour (kInk.withAlpha (0.8f));
-        for (int i = 1; i <= 3; ++i)
-            g.fillRect (head.getX() + head.getWidth() * (float) i / 4.0f - 5.0f, head.getY() + 5.0f, 10.0f, 10.0f);
-        g.drawRoundedRectangle (head, 4.0f, 1.2f);
-    }
-
-    // signal path lamps
-    {
-        const char* names[6] { "INPUT", "TAPE", "ECHO", "FILTER", "SECTION", "OUTPUT" };
-        const auto a = state.pathArea;
-        const float cw = (float) a.getWidth() / 3.0f;
-        const float ch = (float) a.getHeight() / 2.0f;
-        for (int i = 0; i < 6; ++i)
-        {
-            const int col = i % 3, row = i / 3;
-            const juce::Point<float> c ((float) a.getX() + cw * ((float) col + 0.5f),
-                                        (float) a.getY() + ch * (float) row + ch * 0.38f);
-            float b = state.bypassed ? 0.0f : 1.0f;
-            if (i == 5)
-                b = state.bypassed ? 0.0f : juce::jlimit (0.25f, 1.0f, 0.25f + juce::jmax (state.peak[0], state.peak[1]) * 3.0f);
-            drawLamp (g, c, 7.0f, b, kAmber);
-            g.setColour (kMuted);
-            g.setFont (RiddimLookAndFeel::font (10.5f));
-            g.drawText (juce::String (names[i]), juce::Rectangle<float> (c.x - cw * 0.5f, c.y + 12.0f, cw, 14.0f),
-                        juce::Justification::centred, false);
-        }
-    }
+            if (safe == nullptr || r != 1) return;
+            file.deleteFile(); refreshPresetBox(); setCurrentPreset ({}, -1, {});
+        }));
 }
 
 //==============================================================================
 RiddimLabAudioProcessorEditor::RiddimLabAudioProcessorEditor (RiddimLabAudioProcessor& p)
-    : AudioProcessorEditor (p), proc (p)
+    : AudioProcessorEditor (&p), main (p)
 {
-    setLookAndFeel (&look);
-
-    headerArt = juce::ImageCache::getFromMemory (BinaryData::header_art_png, BinaryData::header_art_pngSize);
-
-    // Fine speckle texture used to give panels an aged surface.
-    grain = juce::Image (juce::Image::ARGB, 128, 128, true);
-    {
-        juce::Graphics ig (grain);
-        juce::Random rng (42);
-        for (int i = 0; i < 1500; ++i)
-        {
-            ig.setColour (juce::Colours::black.withAlpha (rng.nextFloat() * 0.22f));
-            ig.fillRect (rng.nextInt (128), rng.nextInt (128), 1 + rng.nextInt (2), 1 + rng.nextInt (2));
-        }
-        for (int i = 0; i < 500; ++i)
-        {
-            ig.setColour (juce::Colours::white.withAlpha (rng.nextFloat() * 0.07f));
-            ig.fillRect (rng.nextInt (128), rng.nextInt (128), 1, 1);
-        }
-    }
-
-    addAndMakeVisible (liveDisplay);
-
-    // Navigation (exact order requested: Master, Drums, Guitar, Bass, Keys, Horns, Vocal).
-    for (int i = 0; i < 7; ++i)
-    {
-        navButtons[i].setButtonText (kSectionNames[i]);
-        navButtons[i].setClickingTogglesState (true);
-        navButtons[i].setRadioGroupId (7421);
-        navButtons[i].getProperties().set ("role", "nav");
-        addAndMakeVisible (navButtons[i]);
-        navButtons[i].onClick = [this, i] { selectSection (i, true); };
-    }
-    const char* const modeNames[3] { "CHOP", "PICK", "RHYTHM" };
-    for (int i = 0; i < 3; ++i)
-    {
-        guitarModeButtons[i].setButtonText (modeNames[i]);
-        guitarModeButtons[i].setClickingTogglesState (true);
-        guitarModeButtons[i].setRadioGroupId (7422);
-        guitarModeButtons[i].getProperties().set ("role", "sub");
-        addAndMakeVisible (guitarModeButtons[i]);
-        guitarModeButtons[i].onClick = [this, i]
-        {
-            selectSection (2, true);
-            selectGuitarMode (i, true);
-        };
-    }
-
-    // Library of starting points and the header preset selector.
-    for (int i = 0; i < 8; ++i)
-    {
-        libButtons[i].setButtonText (kPresets[i].name);
-        libButtons[i].setClickingTogglesState (true);
-        libButtons[i].setRadioGroupId (7423);
-        libButtons[i].getProperties().set ("role", "lib");
-        libButtons[i].getProperties().set ("num", juce::String (i + 1).paddedLeft ('0', 2));
-        libButtons[i].getProperties().set ("sub", kPresets[i].sub);
-        addAndMakeVisible (libButtons[i]);
-        libButtons[i].onClick = [this, i] { applyPreset (i); };
-        presetBox.addItem (juce::String (i + 1).paddedLeft ('0', 2) + "  " + kPresets[i].name, i + 1);
-    }
-    presetBox.setTextWhenNothingSelected ("SELECT A PRESET");
-    presetBox.onChange = [this] { const int id = presetBox.getSelectedId(); if (id > 0) applyPreset (id - 1); };
-    addAndMakeVisible (presetBox);
-
-    prevPreset.setButtonText ("<");
-    nextPreset.setButtonText (">");
-    for (auto* b : { &prevPreset, &nextPreset })
-    {
-        b->getProperties().set ("role", "arrow");
-        addAndMakeVisible (*b);
-    }
-    prevPreset.onClick = [this] { applyPreset ((juce::jmax (currentPreset, 0) + 7) % 8); };
-    nextPreset.onClick = [this] { applyPreset ((currentPreset + 1) % 8); };
-
-    presetInfo.setFont (RiddimLookAndFeel::font (12.0f, false));
-    presetInfo.setColour (juce::Label::textColourId, kMuted);
-    presetInfo.setJustificationType (juce::Justification::centredLeft);
-    presetInfo.setInterceptsMouseClicks (false, false);
-    addAndMakeVisible (presetInfo);
-
-    // Rotary controls, all bound to the existing parameter IDs.
-    for (int k = 0; k < NumKnobs; ++k)
-        initKnob (k);
-
-    // Echo and filter selectors
-    divisionBox.addItemList (juce::StringArray { "1/4", "1/8", "1/8D", "1/8T", "1/16", "1/4D" }, 1);
-    addAndMakeVisible (divisionBox);
-    divisionA = std::make_unique<CA> (proc.parameters, "division", divisionBox);
-    divisionLabel.setText ("DIVISION", juce::dontSendNotification);
-
-    filterModeBox.addItemList (juce::StringArray { "LOW PASS", "HIGH PASS" }, 1);
-    addAndMakeVisible (filterModeBox);
-    filterModeA = std::make_unique<CA> (proc.parameters, "filterMode", filterModeBox);
-    filterTypeLabel.setText ("FILTER TYPE", juce::dontSendNotification);
-
-    for (auto* l : { &divisionLabel, &filterTypeLabel })
-    {
-        l->setFont (RiddimLookAndFeel::font (11.0f));
-        l->setColour (juce::Label::textColourId, kName);
-        l->setJustificationType (juce::Justification::centredLeft);
-        l->setInterceptsMouseClicks (false, false);
-        addAndMakeVisible (*l);
-    }
-
-    syncToggle.setButtonText ("TEMPO SYNC");
-    bypassToggle.setButtonText ("BYPASS");
-    panicToggle.setButtonText ("PANIC / CLEAR");
-    for (auto* t : { &syncToggle, &bypassToggle, &panicToggle })
-        addAndMakeVisible (*t);
-    syncA   = std::make_unique<BA> (proc.parameters, "sync", syncToggle);
-    bypassA = std::make_unique<BA> (proc.parameters, "bypass", bypassToggle);
-    panicA  = std::make_unique<BA> (proc.parameters, "panic", panicToggle);
-
-    throwButton.setButtonText ("HOLD TO THROW");
-    throwButton.getProperties().set ("role", "action");
-    addAndMakeVisible (throwButton);
-    throwButton.onStateChange = [this]
-    {
-        const bool down = throwButton.isDown();
-        if (down != throwHeld)
-        {
-            throwHeld = down;
-            setBoolParam ("throw", down);
-        }
-    };
-
-    // Restore which tab / guitar mode the saved state is in.
-    if (auto* sec = proc.parameters.getRawParameterValue ("activeSection"))
-        activeSection = juce::jlimit (0, 6, juce::roundToInt (sec->load()));
-    if (auto* gm = proc.parameters.getRawParameterValue ("guitarMode"))
-        activeGuitarMode = juce::jlimit (0, 2, juce::roundToInt (gm->load()));
-    guitarModeButtons[activeGuitarMode].setToggleState (true, juce::dontSendNotification);
-    selectSection (activeSection, false);
-
-    setResizable (false, false);
-    setSize (1280, 900);
-    startTimerHz (30);
+    addAndMakeVisible (main);
+    setResizeLimits (640, 450, 2560, 1800);
+    getConstrainer()->setFixedAspectRatio ((double) MainUI::kW / (double) MainUI::kH);
+    setResizable (true, true);
+    float scale = 1.0f;
+    if (auto* d = Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        scale = jlimit (0.55f, 1.0f, jmin ((d->userArea.getHeight() - 90) / (float) MainUI::kH, (d->userArea.getWidth() - 40) / (float) MainUI::kW));
+    setSize (roundToInt (MainUI::kW * scale), roundToInt (MainUI::kH * scale));
 }
 
-RiddimLabAudioProcessorEditor::~RiddimLabAudioProcessorEditor()
-{
-    stopTimer();
-    if (throwHeld)
-        setBoolParam ("throw", false);
-    setLookAndFeel (nullptr);
-}
-
-//==============================================================================
-void RiddimLabAudioProcessorEditor::initKnob (int k)
-{
-    auto& s = knobs[k];
-    const auto& def = kKnobDefs[k];
-    s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 74, 18);
-    addAndMakeVisible (s);
-
-    auto& l = knobLabels[k];
-    l.setText (def.name, juce::dontSendNotification);
-    l.setFont (RiddimLookAndFeel::font (12.0f));
-    l.setColour (juce::Label::textColourId, kName);
-    l.setJustificationType (juce::Justification::centred);
-    l.setInterceptsMouseClicks (false, false);
-    addAndMakeVisible (l);
-
-    if (def.paramId != nullptr)
-    {
-        // The attachment installs its own text functions, so the display
-        // format is applied afterwards.
-        knobA[k] = std::make_unique<SA> (proc.parameters, def.paramId, s);
-        setSliderFormat (s, def.fmt);
-    }
-}
-
-void RiddimLabAudioProcessorEditor::setKnobVisible (int k, bool visible)
-{
-    knobs[k].setVisible (visible);
-    knobLabels[k].setVisible (visible);
-}
-
-void RiddimLabAudioProcessorEditor::placeKnob (int k, juce::Rectangle<int> cell)
-{
-    auto c = cell.reduced (3, 0);
-    auto lab = c.removeFromBottom (18);
-    knobs[k].setBounds (c);
-    knobLabels[k].setBounds (lab);
-}
-
-//==============================================================================
-void RiddimLabAudioProcessorEditor::setFloatParam (const char* id, float plainValue)
-{
-    if (auto* prm = proc.parameters.getParameter (id))
-    {
-        prm->beginChangeGesture();
-        prm->setValueNotifyingHost (prm->convertTo0to1 (plainValue));
-        prm->endChangeGesture();
-    }
-}
-
-void RiddimLabAudioProcessorEditor::setBoolParam (const char* id, bool value)
-{
-    if (auto* prm = proc.parameters.getParameter (id))
-    {
-        prm->beginChangeGesture();
-        prm->setValueNotifyingHost (value ? 1.0f : 0.0f);
-        prm->endChangeGesture();
-    }
-}
-
-void RiddimLabAudioProcessorEditor::setIntParam (const char* id, int value)
-{
-    setFloatParam (id, (float) value);
-}
-
-//==============================================================================
-void RiddimLabAudioProcessorEditor::selectSection (int section, bool notifyHost)
-{
-    activeSection = juce::jlimit (0, 6, section);
-    navButtons[activeSection].setToggleState (true, juce::dontSendNotification);
-    if (notifyHost)
-        setIntParam ("activeSection", activeSection);
-    rebuildChain();
-}
-
-void RiddimLabAudioProcessorEditor::selectGuitarMode (int mode, bool notifyHost)
-{
-    activeGuitarMode = juce::jlimit (0, 2, mode);
-    guitarModeButtons[activeGuitarMode].setToggleState (true, juce::dontSendNotification);
-    if (notifyHost)
-        setIntParam ("guitarMode", activeGuitarMode);
-    layoutChain();
-    repaint (rChain);
-}
-
-// Re-binds the three section knobs (Drive / Tone / Comp) to the parameters of
-// the active section. Only the attachments change; parameter IDs are untouched.
-void RiddimLabAudioProcessorEditor::rebuildChain()
-{
-    const juce::String sec (kSectionIds[activeSection]);
-    const char* const suffix[3] { "Drive", "Tone", "Comp" };
-    for (int i = 0; i < 3; ++i)
-    {
-        const int k = ChainDrive + i;
-        knobA[k].reset();
-        knobA[k] = std::make_unique<SA> (proc.parameters, sec + suffix[i], knobs[k]);
-        setSliderFormat (knobs[k], 0);
-    }
-    knobLabels[ChainTone].setText (activeSection == 3 ? "TONE (LOW-PASS)" : "TONE", juce::dontSendNotification);
-    layoutChain();
-    repaint (rChain);
-}
-
-void RiddimLabAudioProcessorEditor::layoutChain()
-{
-    const bool guitar = activeSection == 2;
-    setKnobVisible (GuitarChop,  guitar && activeGuitarMode == 0);
-    setKnobVisible (GuitarPick,  guitar && activeGuitarMode == 1);
-    setKnobVisible (GuitarBody,  guitar && activeGuitarMode == 2);
-
-    if (rChain.isEmpty())
-        return;
-
-    auto inner = rChain.reduced (14, 0).withTrimmedTop (58).withTrimmedBottom (12);
-    const int cells = guitar ? 4 : 3;
-    const int cw = inner.getWidth() / cells;
-    for (int i = 0; i < 3; ++i)
-        placeKnob (ChainDrive + i, inner.removeFromLeft (cw));
-    if (guitar)
-        placeKnob (GuitarChop + activeGuitarMode, inner.removeFromLeft (cw));
-}
-
-void RiddimLabAudioProcessorEditor::applyPreset (int index)
-{
-    index = juce::jlimit (0, 7, index);
-    currentPreset = index;
-    for (int i = 0; i < 13; ++i)
-        if (kPresets[index].v[i] >= 0.0f)
-            setFloatParam (kPresetIds[i], kPresets[index].v[i]);
-    updatePresetDisplay();
-}
-
-void RiddimLabAudioProcessorEditor::updatePresetDisplay()
-{
-    if (currentPreset >= 0)
-    {
-        libButtons[currentPreset].setToggleState (true, juce::dontSendNotification);
-        presetBox.setSelectedId (currentPreset + 1, juce::dontSendNotification);
-        presetInfo.setText (juce::String (currentPreset + 1).paddedLeft ('0', 2) + " / 08   " + kPresets[currentPreset].sub,
-                            juce::dontSendNotification);
-    }
-}
-
-//==============================================================================
-void RiddimLabAudioProcessorEditor::timerCallback()
-{
-    for (int ch = 0; ch < 2; ++ch)
-    {
-        const float peak = proc.getOutputPeak (ch);
-        const float db = 20.0f * std::log10 (juce::jmax (peak, 1.0e-5f));
-        const float target = juce::jlimit (0.0f, 1.0f, (db + 40.0f) / 43.0f);
-        const float coeff = target > live.needle[ch] ? 0.55f : 0.12f;
-        live.needle[ch] += (target - live.needle[ch]) * coeff;
-        live.peak[ch] = peak;
-    }
-
-    if (auto* byp = proc.parameters.getRawParameterValue ("bypass"))
-        live.bypassed = byp->load() > 0.5f;
-    live.playing = ! live.bypassed && (live.peak[0] + live.peak[1]) > 0.002f;
-    if (live.playing)
-    {
-        live.reelAngle += 0.06f;
-        if (live.reelAngle > juce::MathConstants<float>::twoPi)
-            live.reelAngle -= juce::MathConstants<float>::twoPi;
-    }
-
-    // Follow host automation / state restore for the tab and guitar mode.
-    if (auto* sec = proc.parameters.getRawParameterValue ("activeSection"))
-    {
-        const int s = juce::jlimit (0, 6, juce::roundToInt (sec->load()));
-        if (s != activeSection)
-            selectSection (s, false);
-    }
-    if (auto* gm = proc.parameters.getRawParameterValue ("guitarMode"))
-    {
-        const int m = juce::jlimit (0, 2, juce::roundToInt (gm->load()));
-        if (m != activeGuitarMode)
-            selectGuitarMode (m, false);
-    }
-
-    // Free time only matters with tempo sync off; division only with it on.
-    if (auto* sy = proc.parameters.getRawParameterValue ("sync"))
-    {
-        const bool synced = sy->load() > 0.5f;
-        knobs[Time].setEnabled (! synced);
-        divisionBox.setEnabled (synced);
-    }
-
-    liveDisplay.repaint (live.meterL.expanded (8));
-    liveDisplay.repaint (live.meterR.expanded (8));
-    liveDisplay.repaint (live.ledStack.expanded (2));
-    liveDisplay.repaint (live.reelArea);
-    liveDisplay.repaint (live.pathArea.expanded (4));
-}
-
-//==============================================================================
-void RiddimLabAudioProcessorEditor::paint (juce::Graphics& g)
-{
-    drawWoodFrame (g, getLocalBounds());
-    const auto body = getLocalBounds().reduced (10).toFloat();
-    g.setColour (juce::Colour (0xff070b08));
-    g.fillRoundedRectangle (body, 6.0f);
-    g.setColour (kBrassLo);
-    g.drawRoundedRectangle (body, 6.0f, 2.0f);
-
-    g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
-    if (headerArt.isValid())
-    {
-        g.setColour (juce::Colours::black.withAlpha (0.55f));
-        g.fillRoundedRectangle (rHeaderArt.toFloat().translated (0.0f, 3.0f), 7.0f);
-        g.drawImage (headerArt, rHeaderArt.getX(), rHeaderArt.getY(), rHeaderArt.getWidth(), rHeaderArt.getHeight(),
-                     0, 0, headerArt.getWidth(), headerArt.getHeight());
-    }
-    else
-    {
-        drawPanel (g, rHeaderArt, "RIDDIM LAB", Green, grain);
-    }
-
-    drawPanel (g, rMeters,  {}, Dark, grain);
-    drawPanel (g, rPreset,  "PRESET", Dark, grain);
-    drawPanel (g, rLibrary, "LIBRARY", Dark, grain);
-    drawPanel (g, rTape,    "TAPE MACHINE  /  SATURATION", Brown, grain);
-    drawPanel (g, rFilter,  "TUBBY FILTER", Green, grain);
-    drawPanel (g, rEcho,    "DUB ECHO", Green, grain);
-    drawPanel (g, rChain,   juce::String (kSectionNames[activeSection]) + " SECTION", Green, grain);
-    drawPanel (g, rPath,    "SIGNAL PATH", Green, grain);
-    drawPanel (g, rSafety,  "MASTER SAFETY", Brown, grain);
-
-    // meter captions
-    g.setColour (kName);
-    g.setFont (RiddimLookAndFeel::font (12.0f));
-    g.drawText ("LEFT",  live.meterL.getX(), live.meterL.getBottom() + 8, live.meterL.getWidth(), 14, juce::Justification::centred);
-    g.drawText ("RIGHT", live.meterR.getX(), live.meterR.getBottom() + 8, live.meterR.getWidth(), 14, juce::Justification::centred);
-
-    // section note
-    g.setColour (kMuted);
-    g.setFont (RiddimLookAndFeel::font (11.5f, false));
-    g.drawText ("TONE: " + juce::String (kToneRole[activeSection]) + "  |  DRIVE: SATURATION  |  COMP: PEAKS",
-                rChain.getX() + 18, rChain.getY() + 38, rChain.getWidth() - 36, 16,
-                juce::Justification::centredLeft, true);
-
-    // safety note
-    g.drawText ("PANIC CLEARS ECHO TAILS.", rSafety.getX() + 18, rSafety.getBottom() - 70, rSafety.getWidth() - 36, 16,
-                juce::Justification::centredLeft, true);
-    g.drawText ("KEEP MONITORING LOW", rSafety.getX() + 18, rSafety.getBottom() - 52, rSafety.getWidth() - 36, 16,
-                juce::Justification::centredLeft, true);
-    g.drawText ("WHEN PUSHING FEEDBACK.", rSafety.getX() + 18, rSafety.getBottom() - 36, rSafety.getWidth() - 36, 16,
-                juce::Justification::centredLeft, true);
-}
-
-//==============================================================================
 void RiddimLabAudioProcessorEditor::resized()
 {
-    auto area = getLocalBounds().reduced (14);       // 1252 x 872 at the standard 1280 x 900
-
-    auto header = area.removeFromTop (130);
-    area.removeFromTop (8);
-    rHeaderArt = header.removeFromLeft (556);
-    header.removeFromLeft (8);
-    rMeters = header.removeFromLeft (392);
-    header.removeFromLeft (8);
-    rPreset = header;
-
-    rLibrary = area.removeFromLeft (206);
-    area.removeFromLeft (8);
-
-    auto nav = area.removeFromTop (54);
-    area.removeFromTop (8);
-    auto rowA = area.removeFromTop (196);
-    area.removeFromTop (8);
-    auto rowB = area.removeFromTop (224);
-    area.removeFromTop (8);
-    auto rowC = area;
-
-    rTape   = rowA.removeFromLeft (640);
-    rowA.removeFromLeft (8);
-    rFilter = rowA;
-    rEcho   = rowB;
-    rChain  = rowC.removeFromLeft (560);
-    rowC.removeFromLeft (8);
-    rPath   = rowC.removeFromLeft (250);
-    rowC.removeFromLeft (8);
-    rSafety = rowC;
-
-    liveDisplay.setBounds (getLocalBounds());
-
-    // ---- navigation tabs; the Guitar tab carries its Chop / Pick / Rhythm subtabs
-    {
-        const float weights[7] { 1.0f, 1.0f, 1.3f, 1.0f, 1.0f, 1.0f, 1.0f };
-        float total = 0.0f;
-        for (float w : weights) total += w;
-        const int gap = 4;
-        const float unit = (float) (nav.getWidth() - 6 * gap) / total;
-        int x = nav.getX();
-        for (int i = 0; i < 7; ++i)
-        {
-            const int w = (i == 6) ? nav.getRight() - x : juce::roundToInt (unit * weights[i]);
-            const juce::Rectangle<int> cell (x, nav.getY(), w, nav.getHeight());
-            if (i == 2)
-            {
-                navButtons[i].setBounds (cell.withHeight (30));
-                auto subs = cell.withTrimmedTop (32);
-                const int sw = subs.getWidth() / 3;
-                for (int s = 0; s < 3; ++s)
-                    guitarModeButtons[s].setBounds ((s == 2 ? subs : subs.removeFromLeft (sw)).reduced (1, 0));
-            }
-            else
-            {
-                navButtons[i].setBounds (cell);
-            }
-            x += w + gap;
-        }
-    }
-
-    // ---- library list
-    {
-        auto inner = rLibrary.reduced (10, 0).withTrimmedTop (40).withTrimmedBottom (12);
-        const int itemH = (inner.getHeight() - 7 * 4) / 8;
-        for (int i = 0; i < 8; ++i)
-        {
-            libButtons[i].setBounds (inner.removeFromTop (itemH));
-            inner.removeFromTop (4);
-        }
-    }
-
-    // ---- header preset block
-    {
-        auto pin = rPreset.reduced (14, 0).withTrimmedTop (38).withTrimmedBottom (12);
-        presetBox.setBounds (pin.removeFromTop (34));
-        pin.removeFromTop (8);
-        auto row = pin.removeFromTop (32);
-        prevPreset.setBounds (row.removeFromLeft (44));
-        row.removeFromLeft (6);
-        nextPreset.setBounds (row.removeFromLeft (44));
-        row.removeFromLeft (10);
-        presetInfo.setBounds (row);
-    }
-
-    // ---- header meters (the moving parts are drawn by the live overlay)
-    {
-        auto inner = rMeters.reduced (14, 10);
-        live.meterL = juce::Rectangle<int> (inner.getX() + 4, inner.getY() + 4, 160, 86);
-        live.meterR = juce::Rectangle<int> (inner.getRight() - 164, inner.getY() + 4, 160, 86);
-        live.ledStack = juce::Rectangle<int> (rMeters.getCentreX() - 8, inner.getY() + 8, 16, 82);
-    }
-
-    // ---- tape machine: reels on the left, five knobs on the right
-    {
-        auto inner = rTape.reduced (14, 0).withTrimmedTop (38).withTrimmedBottom (10);
-        live.reelArea = inner.removeFromLeft (210);
-        const int cw = inner.getWidth() / 5;
-        const int order[5] { TapeSat, TapeTone, Wow, Flutter, Wear };
-        for (int i = 0; i < 5; ++i)
-            placeKnob (order[i], inner.removeFromLeft (cw));
-    }
-
-    // ---- tubby filter: two knobs and the mode selector
-    {
-        auto inner = rFilter.reduced (14, 0).withTrimmedTop (38).withTrimmedBottom (10);
-        auto modeCol = inner.removeFromRight (140);
-        const int cw = inner.getWidth() / 2;
-        placeKnob (Cutoff, inner.removeFromLeft (cw));
-        placeKnob (Resonance, inner.removeFromLeft (cw));
-        auto m = modeCol.withSizeKeepingCentre (modeCol.getWidth() - 6, 50);
-        filterTypeLabel.setBounds (m.removeFromTop (18));
-        filterModeBox.setBounds (m.removeFromTop (30));
-    }
-
-    // ---- dub echo: six knobs and the timing column
-    {
-        auto inner = rEcho.reduced (14, 0).withTrimmedTop (38).withTrimmedBottom (10);
-        auto col = inner.removeFromRight (240).withSizeKeepingCentre (230, 140);
-        const int cw = inner.getWidth() / 6;
-        const int order[6] { Time, Feedback, Mix, Heat, Offset, Damping };
-        for (int i = 0; i < 6; ++i)
-            placeKnob (order[i], inner.removeFromLeft (cw));
-        divisionLabel.setBounds (col.removeFromTop (16));
-        divisionBox.setBounds (col.removeFromTop (30));
-        col.removeFromTop (10);
-        syncToggle.setBounds (col.removeFromTop (32));
-        col.removeFromTop (10);
-        throwButton.setBounds (col.removeFromTop (40));
-    }
-
-    layoutChain();
-
-    // ---- signal path lamps
-    live.pathArea = rPath.reduced (16, 0).withTrimmedTop (46).withTrimmedBottom (16);
-
-    // ---- safety switches
-    {
-        auto inner = rSafety.reduced (14, 0).withTrimmedTop (44);
-        bypassToggle.setBounds (inner.removeFromTop (38));
-        inner.removeFromTop (10);
-        panicToggle.setBounds (inner.removeFromTop (38));
-    }
+    const float s = (float) getWidth() / (float) MainUI::kW;
+    main.setTransform (AffineTransform::scale (s));
+    main.setBounds (0, 0, MainUI::kW, MainUI::kH);
 }
