@@ -1,0 +1,49 @@
+name: Build Riddim Lab for macOS
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Show tool versions
+        run: cmake --version
+
+      - name: Configure project
+        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+      - name: Build AU and VST3
+        run: cmake --build build --config Release --parallel 3
+
+      - name: Ad-hoc sign and package plugins
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p package
+
+          while IFS= read -r -d '' bundle; do
+            name="$(basename "$bundle")"
+            codesign --force --deep --sign - "$bundle"
+            ditto -c -k --sequesterRsrc --keepParent "$bundle" "package/${name}.zip"
+          done < <(find build -type d \( -name "*.vst3" -o -name "*.component" \) -prune -print0)
+
+          if ! compgen -G "package/*.zip" > /dev/null; then
+            echo "ERROR: No AU or VST3 plugin bundles found."
+            exit 1
+          fi
+
+          ls -lh package
+
+      - name: Upload plugins
+        uses: actions/upload-artifact@v4
+        with:
+          name: Riddim-Lab-macOS-plugins
+          path: package/*.zip
+          if-no-files-found: error
