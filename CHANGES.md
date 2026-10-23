@@ -1,4 +1,35 @@
-# Riddim Lab v2.0 - what changed
+# Riddim Lab v2.1 - simpler interface, SteadyBass, Piano Bang
+
+## Interface trimmed ("keep the tabs, trim each")
+Every tab now shows only what it uses. Layout: INPUT / METERS / OUTPUT on top, then one row of tab-specific panels,
+then TAPE MACHINE / DUB ECHO / REVERB, then a SIGNAL FLOW strip listing only the stages that tab really has.
+- Master: Filter, Tone EQ, Limiter.  Drums and Vocal: Source, Compressor, Tone EQ.  Guitar and Horns: Source, Filter, Tone EQ.
+- Bass: SteadyBass and Tone EQ.  Piano Bang (replaces Keys): Piano Bang knobs with OLD SCHOOL / MODERN voicing buttons, and Tone EQ.
+- Removed from the interface and the audio path: modulation (chorus/phaser/flanger), the second delay, and the Hall/Room/Dub reverbs.
+  Reverb is now SPRING or PLATE. Dub echo is the existing Echo, renamed DUB ECHO and unchanged.
+- Factory presets cleaned up to match.
+
+## SteadyBass (Bass tab)
+Weight-preserving bass leveller. Evens out note-to-note level while keeping the fundamental, the attack and the body.
+Controls: INTENSITY (how much), PUNCH (how much of each note's attack passes before levelling settles), WEIGHT (how gently the
+low fundamental region is treated compared with the upper harmonics). Processes only the incoming bass, generates nothing.
+No latency, no look-ahead, no phase change (a gain-only design with a zero-latency 220 Hz crossover that sums back flat).
+It self-matches long-term loudness so "on" is not just "louder". New parameter IDs: bass_sbOn, bass_sbAmount, bass_sbPunch, bass_sbWeight.
+
+## Piano Bang
+OLD SCHOOL: upright piano on tape (warm low shelf, forward mids, rolled-off top, vintage tape, a little wobble).
+MODERN: clean Motif-ES-style stage piano (scooped mids, bright hammer and air, clean tape). Both write the EQ, tape and
+BANG / RING / HAMMER knobs in one click; the button lights while the settings still match.
+
+## Measured with synthetic bass lines (Tests/steadybass_tests.cpp, offline)
+Note-to-note body level spread 4.4 dB -> about 2.7 dB at default settings (consistent across five random bass lines);
+long-term loudness within +/-0.1 dB of bypass at inputs from -25 to -1 dBFS peak; low band (<110 Hz) kept within 0.1 dB;
+note attack preserved (onset-to-body ratio not reduced); no added clipping; 3rd harmonic of a steady 50 Hz tone below -90 dBc;
+amount 0 is transparent; silence stays silent; zero latency. An ordinary 4:1 compressor measured on the same material
+levelled slightly harder (about 2.0 dB spread) but SteadyBass keeps more onset and does it with loudness auto-matched.
+Not tested: macOS build, Ableton, listening on real basses and speakers.
+
+# Riddim Lab v2.0 - what changed (earlier release)
 
 ## Audio engine (rewritten, every section now does real work)
 Fixed the faults found by measuring the old engine: wow/flutter did nothing, the first echo repeat skipped the filter,

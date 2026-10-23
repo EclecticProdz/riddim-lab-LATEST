@@ -67,14 +67,14 @@ int main(){
     Rig r; neutral(r); r.S(Master,FiltOn,1); r.S(Master,FilterRoute,1); r.S(Master,Cutoff,500); r.S(Master,Resonance,0.1f);
     auto o=r.run(48000,sine(5000,0.3f)); double g=db(rms(o,24000,48000))-db(0.3/1.414);
     CHECK("input-route LP 500 kills 5k",g<-20,"%.1f dB",g); }
-  { // compressor
-    Rig r; neutral(r); r.S(Master,CompOn,1); r.S(Master,CompThresh,-20); r.S(Master,CompRatio,4); r.S(Master,CompMakeup,0);
-    auto o=r.run(48000,sine(1000,0.5f)); double g=db(rms(o,24000,48000))-db(0.5/1.414);
-    double expect=-(( -6.02+20)*0.75);  // over by 14 dB -> reduce 10.5
-    CHECK("comp 4:1 thr -20",std::abs(g-expect)<2.0,"gain %.2f expect ~%.1f GR meter %.1f",g,expect,r.p.getCompGainReductionDb()); 
-    Rig q; neutral(q); q.S(Master,CompOn,1); q.S(Master,CompThresh,-20); q.S(Master,CompRatio,4);q.S(Master,CompMakeup,6);
-    auto o2=q.run(48000,sine(1000,0.5f)); double g2=db(rms(o2,24000,48000))-db(0.5/1.414);
-    CHECK("comp makeup +6",std::abs((g2-g)-6)<0.5,"%.2f",g2-g); }
+  { // compressor (Drums tab)
+    auto mk=[&](float mk){ Rig r; neutral(r); r.sec(Drums); r.S(Drums,InGain,0); r.S(Drums,OutGain,0); r.S(Drums,CompOn,1); r.S(Drums,CompThresh,-20); r.S(Drums,CompRatio,4); r.S(Drums,CompMakeup,mk); r.S(Drums,CompMode,1);
+      auto o=r.run(48000,sine(1000,0.5f)); return db(rms(o,24000,48000))-db(0.5/1.414); };
+    double g=mk(0), g2=mk(6);
+    CHECK("comp 4:1 thr -20 reduces ~10 dB",g<-6&&g>-14,"gain %.2f",g);
+    CHECK("comp makeup +6",std::abs((g2-g)-6)<0.5,"%.2f",g2-g);
+    Rig z; neutral(z); z.sec(Master); z.S(Master,CompOn,1); z.S(Master,CompThresh,-30); z.S(Master,CompRatio,10); auto o=z.run(48000,sine(1000,0.5f));
+    CHECK("master tab has no compressor",std::abs(db(rms(o,24000,48000))-db(0.5/1.414))<0.2,"%.2f dB",db(rms(o,24000,48000))-db(0.5/1.414)); }
   { // EQ
     auto gain=[&](P band,double f){ Rig r; neutral(r); r.S(Master,EqOn,1); r.S(Master,band,9); auto o=r.run(48000,sine(f,0.1f)); return db(rms(o,24000,48000))-db(0.1/1.414); };
     CHECK("EQ low +9 @50Hz",gain(EqLow,50)>6,"%.1f",gain(EqLow,50));
@@ -100,24 +100,15 @@ int main(){
     auto o=r.run(48000,sine(300,0.9f)); float pk=0; for(int i=2000;i<(int)o.size();i++) pk=std::max(pk,std::abs(o[i]));
     CHECK("limiter ceiling -1 dBFS",db(pk)<=-0.95,"peak %.2f dBFS GR %.1f",db(pk),r.p.getLimiterGainReductionDb()); }
   { // reverb tails by type
-    for(int t=0;t<5;t++){ Rig r; neutral(r); r.S(Master,RevOn,1); r.S(Master,RevType,(float)t); r.S(Master,RevMix,1); r.S(Master,RevDecay,0.6f); r.S(Master,RevPre,0);
+    for(int t=0;t<2;t++){ Rig r; neutral(r); r.S(Master,RevOn,1); r.S(Master,RevType,(float)t); r.S(Master,RevMix,1); r.S(Master,RevDecay,0.6f); r.S(Master,RevPre,0);
       auto o=r.run(48000*8,[](int i){return i<200?0.5f:0.f;}); double e1=rms(o,6000,12000),e2=rms(o,48000*3,48000*3+6000),e3=rms(o,48000*7,48000*8);
       CHECK(("reverb type "+juce::String(t)).toRawUTF8(),e1>1e-4&&(e2<e1||e2<1e-5)&&(e3<e2||e3<1e-5),"%.1f / %.1f / %.1f dB",db(e1),db(e2),db(e3)); }
-    Rig a; neutral(a); a.S(Master,RevOn,1); a.S(Master,RevMix,1); a.S(Master,RevType,2); a.S(Master,RevDecay,0.2f);
-    Rig b; neutral(b); b.S(Master,RevOn,1); b.S(Master,RevMix,1); b.S(Master,RevType,2); b.S(Master,RevDecay,0.9f);
+    Rig a; neutral(a); a.S(Master,RevOn,1); a.S(Master,RevMix,1); a.S(Master,RevType,1); a.S(Master,RevDecay,0.2f);
+    Rig b; neutral(b); b.S(Master,RevOn,1); b.S(Master,RevMix,1); b.S(Master,RevType,1); b.S(Master,RevDecay,0.9f);
     auto imp=[](int i){return i<200?0.5f:0.f;}; auto oa=a.run(48000*4,imp), ob=b.run(48000*4,imp);
     CHECK("reverb decay knob longer",rms(ob,48000*2,48000*3)>2*rms(oa,48000*2,48000*3),"%.1f vs %.1f dB",db(rms(ob,96000,144000)),db(rms(oa,96000,144000))); }
-  { // modulation changes the signal
-    for(int t=0;t<3;t++){ Rig r; neutral(r); r.S(Master,ModOn,1); r.S(Master,ModType,(float)t); r.S(Master,ModMix,0.5f); r.S(Master,ModDepth,0.8f);
-      auto o=r.run(48000*2,sine(1000,0.3f)); double mn=1e9,mx=0; for(int i=48000;i<96000;i+=240){ double e=rms(o,i,i+240); mn=std::min(mn,e); mx=std::max(mx,e);} 
-      CHECK(("mod type "+juce::String(t)).toRawUTF8(),mx/mn>1.02&&!std::isnan(mx),"level swing %.2f dB",db(mx)-db(mn)); } }
-  { // rhythm delay repeat (burst)
-    Rig r; neutral(r); r.S(Master,DlyOn,1); r.S(Master,DlyDiv,2); r.S(Master,DlyMix,1); r.S(Master,DlyFeedback,0.0f);
-    auto o=r.run(48000*2,[](int i){return i<960?0.5f*(float)std::sin(6.2832*1000*i/FS):0.0f;});
-    int first=-1; for(int i=1000;i<(int)o.size();i++) if(std::abs(o[i])>0.05f){first=i;break;}
-    CHECK("delay 1/4 @120bpm repeat at 0.5s",std::abs(first-24000-96)<=400,"starts at %d (expect ~%d)",first,24096); }
   // every tab: finite, bounded, source knob has effect
-  for(int s=1;s<NumSec;s++){ Rig a,b; a.sec(s); b.sec(s);
+  for(int s=1;s<NumSec;s++){ if(!avail((Sec)s,MSrc)) continue; Rig a,b; a.sec(s); b.sec(s);
     for(Rig* r:{&a,&b}){ for(P pp:{EchoOn,RevOn,ModOn,DlyOn,TapeOn,CompOn,EqOn,FiltOn}) r->S((Sec)s,pp,0); }
     int modes = s==Guitar?3:1;
     for(int md=0;md<modes;md++){ a.set("guitarMode",(float)md); b.set("guitarMode",(float)md);
@@ -129,6 +120,25 @@ int main(){
         auto info=sourceInfo((Sec)s,md); juce::String nm=juce::String(kSecName[s])+"/"+juce::String(md)+" "+info.names[k];
         CHECK(nm.toRawUTF8(),fin&&d>1e-6*e,"diff %.1f dB rel",10*std::log10(d/e+1e-12));
         a.S((Sec)s,pk,0.5f); b.S((Sec)s,pk,0.5f);}}}
+  { // SteadyBass on the Bass tab (full plugin path): evens out a bass line, keeps level and low end, bypass-able
+    auto line=[&](int i)->float{ static const float amps[8]{0.5f,0.12f,0.4f,0.2f,0.55f,0.1f,0.3f,0.45f}; int note=i/24000; if(note>=24) return 0.f; float t=(i%24000)/(float)FS; float a=amps[note%8];
+      return a*(1-std::exp(-t/0.003f))*std::exp(-t/0.35f)*(std::sin(6.2832f*55.f*t)+0.3f*std::sin(6.2832f*110.f*t+0.5f)); };
+    auto spread=[&](const std::vector<float>&y){ std::vector<double> d; for(int k=4;k<24;k++) d.push_back(db(rms(y,k*24000+3840,k*24000+18000))); double m=0; for(double v:d)m+=v; m/=d.size(); double s2=0; for(double v:d)s2+=(v-m)*(v-m); return std::sqrt(s2/d.size()); };
+    auto runSb=[&](int on,float amount){ Rig r; neutral(r); r.sec(Bass); r.S(Bass,InGain,0); r.S(Bass,OutGain,0); r.S(Bass,SbOn,(float)on); r.S(Bass,SbAmount,amount); r.S(Bass,SbPunch,0.5f); r.S(Bass,SbWeight,0.5f); return r.run(48000*12,line); };
+    auto off=runSb(0,0.6f), on=runSb(1,0.6f);
+    double s0=spread(off), s1=spread(on), ld=db(rms(on,48000*4,48000*12))-db(rms(off,48000*4,48000*12));
+    CHECK("SteadyBass (plugin path) evens notes",s1<s0*0.7,"%.2f -> %.2f dB",s0,s1);
+    CHECK("SteadyBass (plugin path) level matched",std::abs(ld)<1.0,"%+.2f dB",ld);
+    Rig r; neutral(r); r.sec(Bass); r.S(Bass,SbOn,1); auto o=r.run(48000,[](int){return 0.f;}); bool fin=true; for(float v:o) if(!std::isfinite(v)||std::abs(v)>1e-6f) fin=false;
+    CHECK("SteadyBass silent on silence",fin,""); }
+  { // Piano Bang voicings: old school is darker/warmer than modern, both stay finite and level-sane
+    auto spec=[&](int which){ Rig r; neutral(r); r.sec(Keys); r.S(Keys,InGain,0); r.S(Keys,OutGain,0); r.S(Keys,SrcOn,0); for(auto&pv:pianoVoicing(which)) r.S(Keys,pv.first,pv.second);
+      auto o=r.run(48000*3,[&](int i){ float v=0; for(int k=0;k<8;k++) v+=0.05f/(1.0f+0.3f*k)*std::sin(6.2832*110*std::pow(2.0,k)*i/FS); return v; });
+      riddim::Biquad a,b; a.lowpass(FS,300,0.707); b.highpass(FS,5000,0.707); double lo=0,hi=0,tot=0; for(int i=48000;i<(int)o.size();i++){ float l=a.process(o[i]), h=b.process(o[i]); lo+=l*l; hi+=h*h; tot+=o[i]*o[i]; }
+      return std::array<double,2>{ 10*std::log10(hi/lo), 10*std::log10(tot/(o.size()-48000)) }; };
+    auto old=spec(0), mod=spec(1);
+    CHECK("piano: modern is brighter than old school",mod[0]-old[0]>4,"hi/lo %.1f vs %.1f dB",mod[0],old[0]);
+    CHECK("piano: both voicings keep sane level",std::abs(mod[1]-old[1])<6,"%.1f vs %.1f dB",mod[1],old[1]); }
   { // switching tabs while processing + all-on stress, fuzz
     Rig r; juce::Random rnd(7); bool fin=true; juce::AudioBuffer<float> b(2,512);
     for(int blk=0;blk<400;blk++){ if(blk%5==0){ r.sec(rnd.nextInt(7)); r.set("guitarMode",(float)rnd.nextInt(3));

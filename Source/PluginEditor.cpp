@@ -24,24 +24,22 @@ namespace
               { { P::Feedback, 0.38f }, { P::Mix, 0.22f }, { P::Cutoff, 3200 }, { P::Resonance, 0.30f }, { P::Heat, 0.22f }, { P::Division, 0 },
                 { P::TapeSat, 0.30f }, { P::TapeTone, 0.55f }, { P::Wow, 0.10f }, { P::Flutter, 0.06f }, { P::Wear, 0.25f }, { P::TapeType, 2 },
                 { P::Width, 0.18f }, { P::Damping, 0.50f }, { P::RevType, 1 }, { P::RevMix, 0.12f }, { P::RevDecay, 0.55f } } },
-            { "DUB SESSIONS", "Runaway feedback, dub reverb",
+            { "DUB SESSIONS", "Runaway feedback, spring verb",
               { { P::Feedback, 0.74f }, { P::Mix, 0.36f }, { P::Cutoff, 3600 }, { P::Resonance, 0.62f }, { P::Heat, 0.45f }, { P::Division, 5 },
                 { P::TapeSat, 0.42f }, { P::TapeTone, 0.68f }, { P::Wow, 0.12f }, { P::Flutter, 0.09f }, { P::Wear, 0.30f }, { P::TapeType, 1 },
-                { P::RevType, 4 }, { P::RevMix, 0.22f }, { P::RevDecay, 0.70f } } },
-            { "LOVERS ROCK", "Soft, bright repeats with chorus",
+                { P::RevType, 0 }, { P::RevMix, 0.22f }, { P::RevDecay, 0.70f } } },
+            { "LOVERS ROCK", "Soft, bright repeats, plate verb",
               { { P::Feedback, 0.34f }, { P::Mix, 0.24f }, { P::Cutoff, 4500 }, { P::Resonance, 0.25f }, { P::Heat, 0.18f }, { P::Division, 2 },
                 { P::TapeSat, 0.15f }, { P::TapeTone, 0.80f }, { P::Wow, 0.06f }, { P::Flutter, 0.03f }, { P::Wear, 0.05f }, { P::TapeType, 0 },
-                { P::Width, 0.22f }, { P::Damping, 0.35f }, { P::RevType, 1 }, { P::RevMix, 0.20f }, { P::RevDecay, 0.50f },
-                { P::ModOn, 1 }, { P::ModType, 0 }, { P::ModMix, 0.22f }, { P::ModRate, 0.7f }, { P::ModDepth, 0.5f } } },
+                { P::Width, 0.22f }, { P::Damping, 0.35f }, { P::RevType, 1 }, { P::RevMix, 0.20f }, { P::RevDecay, 0.50f } } },
             { "ROCKSTEADY", "Short, clean slap echo",
               { { P::Feedback, 0.26f }, { P::Mix, 0.20f }, { P::Cutoff, 5200 }, { P::Resonance, 0.20f }, { P::Heat, 0.20f }, { P::Division, 4 }, { P::EchoType, 1 },
                 { P::TapeSat, 0.22f }, { P::TapeTone, 0.70f }, { P::Wow, 0.04f }, { P::Flutter, 0.03f }, { P::Wear, 0.08f }, { P::TapeType, 0 },
-                { P::RevType, 3 }, { P::RevMix, 0.12f }, { P::RevDecay, 0.30f } } },
+                { P::RevType, 0 }, { P::RevMix, 0.12f }, { P::RevDecay, 0.30f } } },
             { "DANCEHALL VIBES", "Bright ping-pong echoes",
               { { P::Feedback, 0.48f }, { P::Mix, 0.30f }, { P::Cutoff, 6500 }, { P::Resonance, 0.40f }, { P::Heat, 0.30f }, { P::Division, 3 }, { P::EchoType, 2 },
                 { P::TapeSat, 0.20f }, { P::TapeTone, 0.85f }, { P::Wow, 0.03f }, { P::Flutter, 0.02f }, { P::Wear, 0.0f }, { P::TapeType, 0 },
-                { P::Width, 0.25f }, { P::Damping, 0.30f }, { P::DlyOn, 1 }, { P::DlyMix, 0.14f }, { P::DlyFeedback, 0.3f }, { P::DlyDiv, 1 },
-                { P::RevType, 3 }, { P::RevMix, 0.10f } } },
+                { P::Width, 0.25f }, { P::Damping, 0.30f }, { P::RevType, 1 }, { P::RevMix, 0.10f } } },
             { "VOCAL TOOLS", "Subtle vocal echo, plate verb",
               { { P::Feedback, 0.32f }, { P::Mix, 0.22f }, { P::Cutoff, 2400 }, { P::Resonance, 0.22f }, { P::Heat, 0.12f }, { P::Division, 0 },
                 { P::TapeSat, 0.10f }, { P::TapeTone, 0.75f }, { P::Wow, 0.02f }, { P::Flutter, 0.02f }, { P::Wear, 0.03f },
@@ -51,7 +49,7 @@ namespace
               { { P::Feedback, 0.20f }, { P::Mix, 0.08f }, { P::Cutoff, 6000 }, { P::Resonance, 0.2f }, { P::Heat, 0.1f }, { P::Division, 1 },
                 { P::CompOn, 1 }, { P::CompThresh, -14 }, { P::CompRatio, 2 }, { P::CompMakeup, 2 }, { P::CompMode, 0 },
                 { P::EqLow, 1 }, { P::EqHigh, 1.5f }, { P::TapeSat, 0.25f }, { P::TapeType, 0 }, { P::TapeTone, 0.85f },
-                { P::Wow, 0.0f }, { P::Flutter, 0.0f }, { P::Wear, 0.0f }, { P::RevType, 2 }, { P::RevMix, 0.05f }, { P::RevDecay, 0.4f } } }
+                { P::Wow, 0.0f }, { P::Flutter, 0.0f }, { P::Wear, 0.0f }, { P::RevType, 1 }, { P::RevMix, 0.05f }, { P::RevDecay, 0.4f } } }
         };
         return f;
     }
@@ -62,15 +60,13 @@ namespace
         static const char* chop[3]   { "How quickly each chord is cut off", "How far the signal drops between chops", "Pick click on the chop" };
         static const char* pick[3]   { "Lift the pick sound", "Sharpen or soften the pluck", "High-pass the body to thin the guitar" };
         static const char* rhythm[3] { "Low-mid weight", "Round, saturated top end", "Gentle compression to bind the strum" };
-        static const char* bass[3]   { "Parallel compression on the low end", "Boost the fundamental", "Upper harmonics so it speaks on small speakers" };
-        static const char* keys[3]   { "Top-end air", "Tremolo depth", "Tremolo speed" };
+                static const char* keys[3]   { "The bang: boost or soften the front of every note", "How long the note rings after the hit", "Hammer click in the upper mids" };
         static const char* horns[3]  { "Presence around 2.4 kHz", "Weight around 350 Hz", "Round off the top end" };
         static const char* vocal[3]  { "Tame harsh sibilance", "Add sparkle above 11 kHz", "Chest warmth and a little saturation" };
         switch (s)
         {
             case rp::Drums:  return drums[i];
             case rp::Guitar: return mode == 0 ? chop[i] : (mode == 1 ? pick[i] : rhythm[i]);
-            case rp::Bass:   return bass[i];
             case rp::Keys:   return keys[i];
             case rp::Horns:  return horns[i];
             case rp::Vocal:  return vocal[i];
@@ -106,12 +102,9 @@ namespace
             case P::RevPre: return "Delay before the reverb starts";
             case P::RevDecay: return "Reverb length";
             case P::RevMix: return "Reverb level";
-            case P::ModRate: return "Modulation speed";
-            case P::ModDepth: return "Modulation amount";
-            case P::ModMix: return "Modulation level against the dry signal";
-            case P::DlyDiv: return "Tempo-synced time of the second delay";
-            case P::DlyFeedback: return "Repeats of the second delay";
-            case P::DlyMix: return "Second delay level";
+            case P::SbAmount: return "How strongly the notes are evened out. Only the incoming bass is processed";
+            case P::SbPunch: return "Higher lets more of each note's attack through before the levelling settles";
+            case P::SbWeight: return "Higher keeps the low fundamental fuller; the upper harmonics are levelled more";
             case P::LimThresh: return "Level where the limiter starts working";
             case P::LimRelease: return "How fast the limiter lets go";
             case P::LimCeiling: return "The output can never go above this level";
@@ -154,7 +147,7 @@ MainUI::MainUI (RiddimLabAudioProcessor& p) : proc (p)
     auto info = [this] (const String& s) { setInfo (s); };
 
     // ---- nav tabs
-    const char* names[7] { "MASTER", "DRUMS", "GUITAR", "BASS", "KEYS", "HORNS", "VOCAL" };
+    const char* names[7] { "MASTER", "DRUMS", "GUITAR", "BASS", "PIANO BANG", "HORNS", "VOCAL" };
     for (int i = 0; i < 7; ++i)
     {
         nav[i].setButtonText (names[i]);
@@ -184,8 +177,7 @@ MainUI::MainUI (RiddimLabAudioProcessor& p) : proc (p)
     addKnob (K::Feedback, "FEEDBACK", 68, 0); addKnob (K::Mix, "MIX", 68, 0);
     addKnob (K::Heat, "TAPE HEAT", 46, 0); addKnob (K::Width, "OFFSET", 46, 0); addKnob (K::Damping, "DAMPING", 46, 0);
     addKnob (K::RevPre, "PRE-DELAY", 68, 2); addKnob (K::RevDecay, "DECAY", 68, 0); addKnob (K::RevMix, "MIX", 68, 0);
-    addKnob (K::ModRate, "RATE", 58, 7); addKnob (K::ModDepth, "DEPTH", 58, 0); addKnob (K::ModMix, "MIX", 58, 0);
-    addKnob (K::DlyDiv, "TIME", 58, 5); addKnob (K::DlyFeedback, "FEEDBACK", 58, 0); addKnob (K::DlyMix, "MIX", 58, 0);
+    addKnob (K::SbAmount, "INTENSITY", 68, 0); addKnob (K::SbPunch, "PUNCH", 58, 0); addKnob (K::SbWeight, "WEIGHT", 58, 0);
     for (auto k : { K::LimThresh, K::LimRelease, K::LimCeiling })
     {
         auto* kn = addKnob (k, k == K::LimThresh ? "THRESHOLD" : (k == K::LimRelease ? "RELEASE" : "CEILING"), 58, k == K::LimRelease ? 2 : 3);
@@ -208,8 +200,8 @@ MainUI::MainUI (RiddimLabAudioProcessor& p) : proc (p)
     lThrow = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::Momentary, "THROW"));
     lPanic = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::Momentary, "PANIC"));
     auto pw = [&] { return addLamp (std::make_unique<ui::Lamp> (ui::Lamp::LampOnly, "", 5.0f)); };
-    pFilt = pw(); pComp = pw(); pEq = pw(); pTape = pw(); pEcho = pw(); pRev = pw(); pMod = pw(); pDly = pw(); pLim = pw(); pSrc = pw();
-    for (int i = 0; i < 10; ++i) flow[i] = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::LampOnly, "", 7.0f));
+    pFilt = pw(); pComp = pw(); pEq = pw(); pTape = pw(); pEcho = pw(); pRev = pw(); pLim = pw(); pSrc = pw(); pSteady = pw();
+    for (int i = 0; i < 9; ++i) flow[i] = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::LampOnly, "", 7.0f));
     lSat->onInfo = lAnalog->onInfo = lSync->onInfo = lSoft->onInfo = lBypass->onInfo = lThrow->onInfo = lPanic->onInfo = info;
 
     cFilterMode  = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "LOW-PASS", "HIGH-PASS", "BAND-PASS" }, true, 12.5f));
@@ -217,9 +209,17 @@ MainUI::MainUI (RiddimLabAudioProcessor& p) : proc (p)
     cCompMode    = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "GENTLE", "PUNCH", "LIMIT" }, true, 12.5f));
     cTapeType    = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "CLEAN", "VINTAGE", "WORN" }, false, 12.0f));
     cEchoType    = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "TAPE", "DIGITAL", "PING-PONG" }, true, 12.5f));
-    cRevType     = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "SPRING", "PLATE", "HALL", "ROOM", "DUB" }, false, 13.0f));
-    cModType     = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "CHORUS", "PHASER", "FLANGER" }, true, 12.5f));
-    cDlyType     = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "ANALOG", "DIGITAL", "PING-PONG" }, true, 12.5f));
+    cRevType     = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "SPRING", "PLATE" }, false, 14.0f));
+
+    // Piano Bang voicing buttons
+    for (auto* b : { &oldSchoolB, &modernB })
+    {
+        b->getProperties().set ("role", "brass"); b->setClickingTogglesState (false); addAndMakeVisible (*b);
+    }
+    oldSchoolB.setButtonText ("OLD SCHOOL"); oldSchoolB.onClick = [this] { applyPianoVoicing (0); };
+    modernB.setButtonText ("MODERN");        modernB.onClick = [this] { applyPianoVoicing (1); };
+    oldSchoolB.setTooltip ("Upright piano on tape: warm, dark, a little wobble");
+    modernB.setTooltip ("Clean, bright, hammer-forward digital stage piano");
 
     // ---- meters
     for (auto* m : { &meterL, &meterR, &meterIn, &meterGr }) addAndMakeVisible (m);
@@ -328,6 +328,19 @@ void MainUI::rebindAll()
     const auto s = (rp::Sec) sec;
     auto idOf = [&] (P p) { return rp::exists (s, p) ? rp::id (s, p) : String(); };
     const auto src = rp::sourceInfo (s, gMode);
+    const bool hasSrc = rp::avail (s, rp::MSrc), hasSteady = rp::avail (s, rp::MSteady), hasFilt = rp::avail (s, rp::MFilt),
+               hasComp = rp::avail (s, rp::MComp), isMaster = (s == rp::Master);
+    const auto shown = [&] (P p)
+    {
+        switch (p)
+        {
+            case P::Cutoff: case P::Resonance: return hasFilt;
+            case P::CompThresh: case P::CompRatio: case P::CompMakeup: return hasComp;
+            case P::LimThresh: case P::LimRelease: case P::LimCeiling: return isMaster;
+            case P::SbAmount: case P::SbPunch: case P::SbWeight: return hasSteady;
+            default: return true;
+        }
+    };
     int srcIdx = 0;
     for (auto& kd : knobs)
     {
@@ -338,39 +351,54 @@ void MainUI::rebindAll()
             // source knobs: i-th source knob of the current tab/mode
             const int i = srcIdx++;
             p = rp::sourceParam (s, gMode, i);
-            kd->k->setCaption (s == rp::Master ? String() : String (src.names[i]));
+            kd->k->setVisible (hasSrc);
+            if (! hasSrc) { kd->k->bind (proc.parameters, {}, 0, 0.0); continue; }
+            kd->k->setCaption (String (src.names[i]));
             kd->k->help = srcHelp (s, gMode, i);
             kd->k->bind (proc.parameters, idOf (p), 0, rp::defaultValue (s, p));
-            kd->k->setVisible (s != rp::Master);
             continue;
         }
-        const bool isLim = (p == P::LimThresh || p == P::LimRelease || p == P::LimCeiling);
-        kd->k->setVisible (isLim ? s == rp::Master : true);
-        kd->k->bind (proc.parameters, idOf (p), kd->fmt, rp::defaultValue (s, p),
-                     p == P::DlyDiv ? rp::choiceList (P::DlyDiv) : StringArray());
+        const bool vis = shown (p);
+        kd->k->setVisible (vis);
+        kd->k->bind (proc.parameters, vis ? idOf (p) : String(), kd->fmt, rp::defaultValue (s, p));
     }
     updateEchoTimeBinding();
 
     auto bindL = [&] (ui::ParamWidget* w, P p) { w->bindParam (proc.parameters, idOf (p)); };
     bindL (lSat, P::InSat); bindL (lAnalog, P::Analog); bindL (lSync, P::Sync);
-    lSoft->bindParam (proc.parameters, rp::id (rp::Master, P::LimSoft)); lSoft->setVisible (s == rp::Master);
+    lSoft->bindParam (proc.parameters, rp::id (rp::Master, P::LimSoft));
     lBypass->bindParam (proc.parameters, "bypass"); lThrow->bindParam (proc.parameters, "throw"); lPanic->bindParam (proc.parameters, "panic");
     bindL (pFilt, P::FiltOn); bindL (pComp, P::CompOn); bindL (pEq, P::EqOn); bindL (pTape, P::TapeOn); bindL (pEcho, P::EchoOn);
-    bindL (pRev, P::RevOn); bindL (pMod, P::ModOn); bindL (pDly, P::DlyOn);
-    pLim->bindParam (proc.parameters, rp::id (rp::Master, P::LimOn)); pLim->setVisible (s == rp::Master);
-    bindL (pSrc, P::SrcOn); pSrc->setVisible (s != rp::Master);
-    const P order[10] { P::SrcOn, P::FiltOn, P::CompOn, P::EqOn, P::TapeOn, P::EchoOn, P::DlyOn, P::ModOn, P::RevOn, P::LimOn };
-    for (int i = 0; i < 10; ++i)
-        flow[i]->bindParam (proc.parameters, i == 9 ? rp::id (rp::Master, P::LimOn) : idOf (order[i]));
+    bindL (pRev, P::RevOn); bindL (pSrc, P::SrcOn); bindL (pSteady, P::SbOn);
+    pLim->bindParam (proc.parameters, rp::id (rp::Master, P::LimOn));
     bindL (cFilterMode, P::FilterMode); bindL (cFilterRoute, P::FilterRoute); bindL (cCompMode, P::CompMode); bindL (cTapeType, P::TapeType);
-    bindL (cEchoType, P::EchoType); bindL (cRevType, P::RevType); bindL (cModType, P::ModType); bindL (cDlyType, P::DlyType);
+    bindL (cEchoType, P::EchoType); bindL (cRevType, P::RevType);
+
+    // signal flow: only the modules this tab really has
+    flowItems.clear();
+    if (hasSrc)    flowItems.push_back ({ "SOURCE", P::SrcOn, false });
+    if (hasSteady) flowItems.push_back ({ "STEADY", P::SbOn, false });
+    if (hasFilt)   flowItems.push_back ({ "FILTER", P::FiltOn, false });
+    if (hasComp)   flowItems.push_back ({ "COMP", P::CompOn, false });
+    flowItems.push_back ({ "EQ", P::EqOn, false }); flowItems.push_back ({ "TAPE", P::TapeOn, false });
+    flowItems.push_back ({ "ECHO", P::EchoOn, false }); flowItems.push_back ({ "REVERB", P::RevOn, false });
+    if (isMaster)  flowItems.push_back ({ "LIMITER", P::LimOn, true });
+    for (int i = 0; i < 9; ++i)
+    {
+        const bool used = i < (int) flowItems.size();
+        flow[i]->setVisible (used);
+        flow[i]->bindParam (proc.parameters, used ? (flowItems[(size_t) i].master ? rp::id (rp::Master, flowItems[(size_t) i].param) : idOf (flowItems[(size_t) i].param)) : String());
+    }
 
     syncAtt.reset();
     syncAtt = std::make_unique<ParameterAttachment> (*proc.parameters.getParameter (rp::id (s, P::Sync)), [this] (float v) { if ((v > 0.5f) != syncOn) updateEchoTimeBinding(); });
+    layoutControls();
 }
 
 //------------------------------------------------------------------ layout
 void MainUI::place (Component& c, float cx, int top, int w, int h) { c.setBounds (roundToInt (cx - w * 0.5f), top, w, h); }
+
+String MainUI::tabTitle (int section) { return section == rp::Keys ? String ("PIANO BANG") : String (rp::kSecName[section]); }
 
 void MainUI::resized()
 {
@@ -380,11 +408,9 @@ void MainUI::resized()
     rLibrary = { 14, 156, 192, 692 };
     rInfo    = { 14, 856, 1252, 28 };
     const int x0 = 214;
-    rInput  = { x0, 208, 156, 146 };       rMeters = { x0 + 164, 208, 432, 146 };
-    rOutput = { x0 + 604, 208, 156, 146 }; rFlow = { x0 + 768, 208, 284, 146 };
-    rFilter = { x0, 362, 328, 130 };       rComp = { x0 + 336, 362, 400, 130 };      rEq = { x0 + 744, 362, 308, 130 };
+    rInput  = { x0, 208, 260, 146 };       rMeters = { x0 + 268, 208, 516, 146 };    rOutput = { x0 + 792, 208, 260, 146 };
     rTape   = { x0, 500, 346, 210 };       rEcho = { x0 + 354, 500, 392, 210 };      rReverb = { x0 + 754, 500, 298, 210 };
-    rMod    = { x0, 718, 328, 130 };       rDelay = { x0 + 336, 718, 400, 130 };     rLimSrc = { x0 + 744, 718, 308, 130 };
+    rFlow   = { x0, 718, 1052, 130 };
 
     // nav
     {
@@ -400,63 +426,6 @@ void MainUI::resized()
             else { nav[i].setBounds (x, y, 136, h); x += 136 + g; }
         }
     }
-    auto knobAt = [&] (P p, const Rectangle<int>& panel, float cx, int top)
-    {
-        for (auto& kd : knobs)
-            if (kd->p == p && ! (p >= P::Src1 && p <= P::Src9)) { place (*kd->k, panel.getX() + cx, panel.getY() + top, kd->k->preferredWidth(), kd->k->preferredHeight()); return; }
-    };
-    auto lampAt = [&] (Component* c, const Rectangle<int>& panel, int x, int y, int w, int h) { c->setBounds (panel.getX() + x, panel.getY() + y, w, h); };
-    auto power  = [&] (ui::Lamp* l, const Rectangle<int>& panel) { l->setBounds (panel.getX() + 14, panel.getY() + 4, 20, 20); };
-
-    // Row A
-    knobAt (P::InGain, rInput, 78, 28);   lampAt (lSat, rInput, 24, 126, 112, 18);
-    knobAt (P::OutGain, rOutput, 78, 28); lampAt (lAnalog, rOutput, 14, 126, 130, 18);
-    meterIn.setBounds (rMeters.getX() + 10, rMeters.getY() + 6, 200, 122);
-    meterGr.setBounds (rMeters.getRight() - 210, rMeters.getY() + 6, 200, 122);
-    {   // signal flow
-        for (int i = 0; i < 10; ++i)
-        {
-            const int row = i / 5, col = i % 5;
-            const float cx = rFlow.getX() + 30 + col * 56.0f; const int cy = rFlow.getY() + (row == 0 ? 50 : 86);
-            flow[i]->setBounds (roundToInt (cx) - 11, cy - 11, 22, 22);
-        }
-        const int by = rFlow.getY() + 110, bw = 82;
-        lBypass->setBounds (rFlow.getX() + 12, by, bw, 26); lThrow->setBounds (rFlow.getX() + 12 + bw + 6, by, bw, 26); lPanic->setBounds (rFlow.getX() + 12 + 2 * (bw + 6), by, bw, 26);
-    }
-    // Row B
-    power (pFilt, rFilter); power (pComp, rComp); power (pEq, rEq);
-    knobAt (P::Cutoff, rFilter, 54, 30);  knobAt (P::Resonance, rFilter, 142, 30);
-    lampAt (cFilterMode, rFilter, 214, 52, 106, 51); lampAt (cFilterRoute, rFilter, 214, 5, 108, 20);
-    knobAt (P::CompThresh, rComp, 54, 30); knobAt (P::CompRatio, rComp, 142, 30); knobAt (P::CompMakeup, rComp, 230, 30);
-    lampAt (cCompMode, rComp, 302, 46, 90, 51);
-    { const float cxs[4] { 42, 116, 190, 264 }; const P ps[4] { P::EqLow, P::EqMid, P::EqHigh, P::EqPres };
-      for (int i = 0; i < 4; ++i) knobAt (ps[i], rEq, cxs[i] + 2, 32); }
-    // Row C
-    power (pTape, rTape); power (pEcho, rEcho); power (pRev, rReverb);
-    lampAt (cTapeType, rTape, 180, 5, 156, 20);
-    deck.setBounds (rTape.getX() + 8, rTape.getY() + 32, 330, 96);
-    { const float cxs[5] { 48, 111, 174, 237, 300 }; const P ps[5] { P::TapeSat, P::TapeTone, P::Wow, P::Flutter, P::Wear };
-      for (int i = 0; i < 5; ++i) knobAt (ps[i], rTape, cxs[i] + 0, 130); }
-    for (auto& kd : knobs) if (kd->echoTime) place (*kd->k, rEcho.getX() + 52, rEcho.getY() + 30, kd->k->preferredWidth(), kd->k->preferredHeight());
-    knobAt (P::Feedback, rEcho, 140, 30); knobAt (P::Mix, rEcho, 228, 30);
-    knobAt (P::Heat, rEcho, 52, 130); knobAt (P::Width, rEcho, 140, 130); knobAt (P::Damping, rEcho, 228, 130);
-    lampAt (cEchoType, rEcho, 292, 60, 96, 51); lampAt (lSync, rEcho, 292, 126, 100, 18);
-    knobAt (P::RevPre, rReverb, 56, 30); knobAt (P::RevDecay, rReverb, 150, 30); knobAt (P::RevMix, rReverb, 244, 30);
-    lampAt (cRevType, rReverb, 14, 156, 270, 24);
-    // Row D
-    power (pMod, rMod); power (pDly, rDelay); power (pLim, rLimSrc); power (pSrc, rLimSrc);
-    knobAt (P::ModRate, rMod, 46, 30); knobAt (P::ModDepth, rMod, 124, 30); knobAt (P::ModMix, rMod, 202, 30);
-    lampAt (cModType, rMod, 240, 48, 84, 51);
-    knobAt (P::DlyDiv, rDelay, 46, 30); knobAt (P::DlyFeedback, rDelay, 124, 30); knobAt (P::DlyMix, rDelay, 202, 30);
-    lampAt (cDlyType, rDelay, 288, 48, 106, 51);
-    { const float cxs[3] { 46, 120, 194 };
-      for (int i = 0; i < 3; ++i)
-      {
-          place (*limKnobs[(size_t) i], rLimSrc.getX() + cxs[i], rLimSrc.getY() + 30, limKnobs[(size_t) i]->preferredWidth(), limKnobs[(size_t) i]->preferredHeight());
-          place (*srcKnobs[(size_t) i], rLimSrc.getX() + cxs[i], rLimSrc.getY() + 30, srcKnobs[(size_t) i]->preferredWidth(), srcKnobs[(size_t) i]->preferredHeight());
-      } }
-    lampAt (lSoft, rLimSrc, 232, 54, 70, 28);
-
     // header
     meterL.setBounds (rVuPanel.getX() + 8, rVuPanel.getY() + 12, 160, 100);
     meterR.setBounds (rVuPanel.getRight() - 168, rVuPanel.getY() + 12, 160, 100);
@@ -475,6 +444,141 @@ void MainUI::resized()
         auto r = rLibrary.reduced (8, 0).withTrimmedTop (38);
         for (auto& it : lib) it->setBounds (r.removeFromTop (62)), r.removeFromTop (3);
     }
+    layoutControls();
+}
+
+// Everything that depends on which tab is showing.
+void MainUI::layoutControls()
+{
+    const auto s = (rp::Sec) sec;
+    const bool hasSrc = rp::avail (s, rp::MSrc), hasSteady = rp::avail (s, rp::MSteady), hasFilt = rp::avail (s, rp::MFilt),
+               hasComp = rp::avail (s, rp::MComp), isMaster = (s == rp::Master), isKeys = (s == rp::Keys);
+
+    auto knobAt = [&] (P p, const Rectangle<int>& panel, float cx, int top)
+    {
+        for (auto& kd : knobs)
+            if (kd->p == p && ! (p >= P::Src1 && p <= P::Src9)) { place (*kd->k, panel.getX() + cx, panel.getY() + top, kd->k->preferredWidth(), kd->k->preferredHeight()); return; }
+    };
+    auto lampAt = [&] (Component* c, const Rectangle<int>& panel, int x, int y, int w, int h) { c->setBounds (panel.getX() + x, panel.getY() + y, w, h); };
+    auto power  = [&] (ui::Lamp* l, const Rectangle<int>& panel) { l->setBounds (panel.getX() + 14, panel.getY() + 4, 20, 20); };
+
+    // Row A
+    knobAt (P::InGain, rInput, 130, 28);   lampAt (lSat, rInput, 74, 126, 112, 18);
+    knobAt (P::OutGain, rOutput, 130, 28); lampAt (lAnalog, rOutput, 64, 126, 130, 18);
+    meterIn.setBounds (rMeters.getX() + 24, rMeters.getY() + 6, 220, 122);
+    meterGr.setBounds (rMeters.getRight() - 244, rMeters.getY() + 6, 220, 122);
+
+    // Row B: only the panels this tab has, widths shared out, contents centred in each
+    rowB.clear();
+    if (hasSteady) rowB.push_back ({ BKind::Steady, {} });
+    if (hasSrc)    rowB.push_back ({ BKind::Src, {} });
+    if (hasFilt)   rowB.push_back ({ BKind::Filter, {} });
+    if (hasComp)   rowB.push_back ({ BKind::Comp, {} });
+    rowB.push_back ({ BKind::Eq, {} });
+    if (isMaster)  rowB.push_back ({ BKind::Limiter, {} });
+    auto natural = [&] (BKind k) { switch (k) { case BKind::Src: return isKeys ? 430 : 270; case BKind::Steady: return 440; case BKind::Filter: return 328; case BKind::Comp: return 400; case BKind::Eq: return 308; default: return 308; } };
+    {
+        const int x0 = 214, total = 1052, gap = 8, n = (int) rowB.size();
+        int sum = 0; for (auto& b : rowB) sum += natural (b.kind);
+        const int extra = (total - gap * (n - 1) - sum) / n;
+        int x = x0;
+        for (size_t i = 0; i < rowB.size(); ++i)
+        {
+            const int w = (i + 1 == rowB.size()) ? (x0 + total - x) : natural (rowB[i].kind) + extra;
+            rowB[i].r = { x, 362, w, 130 }; x += w + gap;
+        }
+    }
+    // hide everything of row B first, then place what is used
+    for (auto* c : std::initializer_list<Component*> { pFilt, pComp, pEq, pLim, pSrc, pSteady, cFilterMode, cFilterRoute, cCompMode, lSoft, &oldSchoolB, &modernB }) c->setVisible (false);
+    for (auto* k : limKnobs) k->setVisible (false);
+    for (auto* k : srcKnobs) k->setVisible (false);
+    for (auto& kd : knobs) if (kd->p == P::SbAmount || kd->p == P::SbPunch || kd->p == P::SbWeight) kd->k->setVisible (false);
+
+    for (auto& b : rowB)
+    {
+        const auto& R = b.r;
+        const auto C = [&] (int cw) { return R.withSizeKeepingCentre (cw, R.getHeight()); };
+        switch (b.kind)
+        {
+            case BKind::Filter:
+            {
+                const auto c = C (328); pFilt->setVisible (true); power (pFilt, R);
+                knobAt (P::Cutoff, c, 54, 30);  knobAt (P::Resonance, c, 142, 30);
+                lampAt (cFilterMode, c, 214, 52, 106, 51); lampAt (cFilterRoute, c, 214, 5, 108, 20);
+                cFilterMode->setVisible (true); cFilterRoute->setVisible (true);
+                break;
+            }
+            case BKind::Comp:
+            {
+                const auto c = C (400); pComp->setVisible (true); power (pComp, R);
+                knobAt (P::CompThresh, c, 54, 30); knobAt (P::CompRatio, c, 142, 30); knobAt (P::CompMakeup, c, 230, 30);
+                lampAt (cCompMode, c, 302, 46, 90, 51); cCompMode->setVisible (true);
+                break;
+            }
+            case BKind::Eq:
+            {
+                const auto c = C (308); pEq->setVisible (true); power (pEq, R);
+                const float cxs[4] { 42, 116, 190, 264 }; const P ps[4] { P::EqLow, P::EqMid, P::EqHigh, P::EqPres };
+                for (int i = 0; i < 4; ++i) knobAt (ps[i], c, cxs[i] + 2, 32);
+                break;
+            }
+            case BKind::Limiter:
+            {
+                const auto c = C (308); pLim->setVisible (true); power (pLim, R); lSoft->setVisible (true);
+                const float cxs[3] { 46, 120, 194 };
+                for (int i = 0; i < 3; ++i) { place (*limKnobs[(size_t) i], c.getX() + cxs[i], c.getY() + 30, limKnobs[(size_t) i]->preferredWidth(), limKnobs[(size_t) i]->preferredHeight()); limKnobs[(size_t) i]->setVisible (true); }
+                lampAt (lSoft, c, 232, 54, 70, 28);
+                break;
+            }
+            case BKind::Src:
+            {
+                const int cw = isKeys ? 430 : 270; const auto c = C (cw); pSrc->setVisible (true); power (pSrc, R);
+                const float cxs[3] { 46, 136, 226 };
+                for (int i = 0; i < 3; ++i) { place (*srcKnobs[(size_t) i], c.getX() + cxs[i], c.getY() + 30, srcKnobs[(size_t) i]->preferredWidth(), srcKnobs[(size_t) i]->preferredHeight()); srcKnobs[(size_t) i]->setVisible (true); }
+                if (isKeys)
+                {
+                    lampAt (&oldSchoolB, c, 292, 50, 130, 30); lampAt (&modernB, c, 292, 86, 130, 30);
+                    oldSchoolB.setVisible (true); modernB.setVisible (true);
+                }
+                break;
+            }
+            case BKind::Steady:
+            {
+                const auto c = C (440); pSteady->setVisible (true); power (pSteady, R);
+                knobAt (P::SbAmount, c, 56, 26); knobAt (P::SbPunch, c, 142, 32); knobAt (P::SbWeight, c, 216, 32);
+                for (auto& kd : knobs) if (kd->p == P::SbAmount || kd->p == P::SbPunch || kd->p == P::SbWeight) kd->k->setVisible (true);
+                break;
+            }
+        }
+    }
+
+    // Row C
+    power (pTape, rTape); power (pEcho, rEcho); power (pRev, rReverb);
+    lampAt (cTapeType, rTape, 180, 5, 156, 20);
+    deck.setBounds (rTape.getX() + 8, rTape.getY() + 32, 330, 96);
+    { const float cxs[5] { 48, 111, 174, 237, 300 }; const P ps[5] { P::TapeSat, P::TapeTone, P::Wow, P::Flutter, P::Wear };
+      for (int i = 0; i < 5; ++i) knobAt (ps[i], rTape, cxs[i] + 0, 130); }
+    for (auto& kd : knobs) if (kd->echoTime) place (*kd->k, rEcho.getX() + 52, rEcho.getY() + 30, kd->k->preferredWidth(), kd->k->preferredHeight());
+    knobAt (P::Feedback, rEcho, 140, 30); knobAt (P::Mix, rEcho, 228, 30);
+    knobAt (P::Heat, rEcho, 52, 130); knobAt (P::Width, rEcho, 140, 130); knobAt (P::Damping, rEcho, 228, 130);
+    lampAt (cEchoType, rEcho, 292, 60, 96, 51); lampAt (lSync, rEcho, 292, 126, 100, 18);
+    knobAt (P::RevPre, rReverb, 56, 30); knobAt (P::RevDecay, rReverb, 150, 30); knobAt (P::RevMix, rReverb, 244, 30);
+    lampAt (cRevType, rReverb, 70, 160, 190, 24);
+
+    // Row D: signal flow strip
+    {
+        const int n = (int) flowItems.size();
+        const float xa = (float) rFlow.getX() + 20.0f, first = xa + 74.0f, span = 560.0f;
+        const float pitch = n > 1 ? span / (float) (n - 1) : 0.0f;
+        for (int i = 0; i < 9; ++i)
+        {
+            const float cx = first + pitch * (float) i;
+            flow[i]->setBounds (roundToInt (cx) - 12, rFlow.getY() + 54 - 12, 24, 24);
+        }
+        const int by = rFlow.getY() + 46, bw = 96;
+        lBypass->setBounds (rFlow.getX() + 748, by, bw, 34); lThrow->setBounds (rFlow.getX() + 748 + bw + 8, by, bw, 34); lPanic->setBounds (rFlow.getX() + 748 + 2 * (bw + 8), by, bw, 34);
+    }
+    repaint();
 }
 
 //------------------------------------------------------------------ painting (cached; the live parts are child components)
@@ -493,6 +597,8 @@ void MainUI::paint (Graphics& g)
 
     const float sh = 28.0f;
     auto P_ = [&] (Rectangle<int> r, const Image& tex, int seed, const String& title, float strip, float inset = 22.0f) { ui::paintPanel (g, r.toFloat(), tex, seed, title, strip, true, inset); };
+    const auto dim = ui::col::creamDim;
+    auto small = [&] (const String& t, Rectangle<float> r, Justification j = Justification::centredLeft) { ui::engraved (g, t, r, ui::font (11, 2, 0.14f), dim, j); };
 
     // header
     g.setImageResamplingQuality (Graphics::highResamplingQuality);
@@ -514,42 +620,79 @@ void MainUI::paint (Graphics& g)
     // row A
     P_ (rInput, A.green, 6, "INPUT", sh);  P_ (rOutput, A.green, 7, "OUTPUT", sh);
     P_ (rMeters, A.dark, 8, {}, 0);
-    ui::engraved (g, "INPUT LEVEL", { (float) rMeters.getX() + 10, (float) rMeters.getBottom() - 17.0f, 200, 14 }, ui::font (12.5f, 2, 0.12f), ui::col::cream);
-    ui::engraved (g, "GAIN REDUCTION", { (float) rMeters.getRight() - 210, (float) rMeters.getBottom() - 17.0f, 200, 14 }, ui::font (12.5f, 2, 0.12f), ui::col::cream);
-    P_ (rFlow, A.green2, 9, "SIGNAL FLOW", sh);
-    {   // cable between lamps, IN / OUT tags
-        const char* lab[10] { "SRC", "FILT", "COMP", "EQ", "TAPE", "ECHO", "DLY", "MOD", "REV", "LIM" };
-        for (int row = 0; row < 2; ++row)
+    ui::engraved (g, "INPUT LEVEL", { (float) rMeters.getX() + 24, (float) rMeters.getBottom() - 17.0f, 220, 14 }, ui::font (12.5f, 2, 0.12f), ui::col::cream);
+    ui::engraved (g, sec == rp::Bass ? "GAIN REDUCTION  /  STEADYBASS" : "GAIN REDUCTION", { (float) rMeters.getRight() - 244, (float) rMeters.getBottom() - 17.0f, 220, 14 }, ui::font (12.5f, 2, 0.12f), ui::col::cream);
+
+    // row B
+    for (auto& b : rowB)
+    {
+        const auto& R = b.r;
+        const auto C = [&] (int cw) { return R.withSizeKeepingCentre (cw, R.getHeight()); };
+        switch (b.kind)
         {
-            const float y = (float) rFlow.getY() + (row == 0 ? 50 : 86);
-            const float xa = (float) rFlow.getX() + 12, xb = (float) rFlow.getX() + 30 + 4 * 56.0f + 14;
-            g.setColour (Colours::black.withAlpha (0.8f)); g.drawLine (xa, y + 1.0f, xb, y + 1.0f, 3.0f);
-            g.setColour (ui::col::brassDark.withAlpha (0.9f)); g.drawLine (xa, y, xb, y, 1.6f);
-            for (int c = 0; c < 4; ++c) { const float ax = (float) rFlow.getX() + 30 + c * 56.0f + 28.0f; Path t; t.addTriangle (ax - 3, y - 3.5f, ax - 3, y + 3.5f, ax + 3.5f, y); g.setColour (ui::col::brass); g.fillPath (t); }
-            for (int c = 0; c < 5; ++c)
-                ui::engraved (g, lab[row * 5 + c], { (float) rFlow.getX() + 30 + c * 56.0f - 26.0f, y + 12.0f, 52.0f, 14.0f }, ui::font (11.5f, 2, 0.08f), ui::col::cream);
+            case BKind::Filter:
+            {
+                const auto c = C (328); P_ (R, A.green, 10, "FILTER", sh, 36);
+                small ("TYPE", { (float) c.getX() + 214, (float) c.getY() + 36.0f, 100, 14 });
+                small ("ROUTE", { (float) c.getX() + 160, (float) c.getY() + 6.0f, 48, 18 }, Justification::centredRight);
+                break;
+            }
+            case BKind::Comp:
+            {
+                const auto c = C (400); P_ (R, A.green, 11, "COMPRESSOR", sh, 36);
+                small ("MODE", { (float) c.getX() + 302, (float) c.getY() + 32.0f, 90, 14 });
+                break;
+            }
+            case BKind::Eq: P_ (R, A.green, 12, sec == rp::Keys ? "TONE EQ  /  PIANO VOICING" : "TONE EQ", sh, 36); break;
+            case BKind::Limiter: P_ (R, A.green, 18, "LIMITER", sh, 36); break;
+            case BKind::Src:
+            {
+                P_ (R, A.brown, 19, rp::sourceInfo ((rp::Sec) sec, gMode).title, sh, 36);
+                if (sec == rp::Keys)
+                {
+                    const auto c = C (430);
+                    small ("VOICING", { (float) c.getX() + 292, (float) c.getY() + 32.0f, 130, 14 }, Justification::centred);
+                    small ("EQ + TAPE PRESET", { (float) c.getX() + 280, (float) c.getY() + 118.0f, 154, 12 }, Justification::centred);
+                }
+                break;
+            }
+            case BKind::Steady:
+            {
+                const auto c = C (440); P_ (R, A.brown, 21, "STEADYBASS  /  WEIGHT-KEEPING LEVELLER", sh, 36);
+                const char* lines[4] { "EVENS OUT NOTE LEVELS", "LOW END STAYS FULL", "ATTACK COMES THROUGH", "NO LATENCY" };
+                for (int i = 0; i < 4; ++i)
+                    ui::engraved (g, lines[i], { (float) c.getX() + 268.0f, (float) c.getY() + 40.0f + 20.0f * i, 172.0f, 16.0f }, ui::font (11.5f, 2, 0.1f), i == 0 ? ui::col::amber : dim, Justification::centredLeft);
+                break;
+            }
         }
     }
-    // row B
-    P_ (rFilter, A.green, 10, "FILTER", sh, 36);   P_ (rComp, A.green, 11, "COMPRESSOR", sh, 36);  P_ (rEq, A.green, 12, "TONE EQ", sh, 36);
-    ui::engraved (g, "TYPE", { (float) rFilter.getX() + 214, (float) rFilter.getY() + 36.0f, 100, 14 }, ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centredLeft);
-    ui::engraved (g, "ROUTE", { (float) rFilter.getX() + 160, (float) rFilter.getY() + 6.0f, 48, 18 }, ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centredRight);
-    ui::engraved (g, "MODE", { (float) rComp.getX() + 302, (float) rComp.getY() + 32.0f, 90, 14 }, ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centredLeft);
     // row C
-    P_ (rTape, A.brown, 13, "TAPE MACHINE", sh, 36);  P_ (rEcho, A.green, 14, "ECHO", sh, 36);  P_ (rReverb, A.brown, 15, "REVERB", sh, 36);
-    ui::engraved (g, "TYPE", { (float) rEcho.getX() + 292, (float) rEcho.getY() + 44.0f, 90, 14 }, ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centredLeft);
-    ui::engraved (g, "REVERB TYPE", { (float) rReverb.getX() + 14, (float) rReverb.getY() + 140.0f, 150, 14 }, ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centredLeft);
-    // row D
-    P_ (rMod, A.green, 16, "MODULATION", sh, 36);  P_ (rDelay, A.green, 17, "DELAY", sh, 36);
-    ui::engraved (g, "TYPE", { (float) rMod.getX() + 240, (float) rMod.getY() + 32.0f, 84, 14 }, ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centredLeft);
-    ui::engraved (g, "TYPE", { (float) rDelay.getX() + 288, (float) rDelay.getY() + 32.0f, 100, 14 }, ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centredLeft);
-    if (sec == rp::Master) P_ (rLimSrc, A.green, 18, "LIMITER", sh, 36);
-    else P_ (rLimSrc, A.brown, 19, rp::sourceInfo ((rp::Sec) sec, gMode).title, sh, 36);
-    if (sec != rp::Master)
+    P_ (rTape, A.brown, 13, "TAPE MACHINE", sh, 36);  P_ (rEcho, A.green, 14, "DUB ECHO", sh, 36);  P_ (rReverb, A.brown, 15, "REVERB", sh, 36);
+    small ("TYPE", { (float) rEcho.getX() + 292, (float) rEcho.getY() + 44.0f, 90, 14 });
+    small ("SPRING  OR  PLATE", { (float) rReverb.getX() + 14, (float) rReverb.getY() + 140.0f, 270, 14 }, Justification::centred);
+
+    // row D: signal flow
     {
-        auto r = Rectangle<float> ((float) rLimSrc.getX() + 228, (float) rLimSrc.getY() + 34, 74, 88);
-        ui::engraved (g, "SOURCE", r.removeFromTop (14), ui::font (11, 2, 0.14f), ui::col::creamDim, Justification::centred);
-        ui::engraved (g, sec == rp::Guitar ? String (gMode == 0 ? "CHOP" : gMode == 1 ? "PICK" : "RHYTHM") : String (rp::kSecName[sec]), r.removeFromTop (30), ui::font (13, 2, 0.08f), ui::col::amber, Justification::centred);
+        P_ (rFlow, A.green2, 9, "SIGNAL FLOW", sh);
+        const float y = (float) rFlow.getY() + 54.0f;
+        const float xa = (float) rFlow.getX() + 20.0f, xb = xa + 74.0f + 560.0f + 62.0f;
+        g.setColour (Colours::black.withAlpha (0.8f)); g.drawLine (xa + 26, y + 1.0f, xb - 26, y + 1.0f, 3.0f);
+        g.setColour (ui::col::brassDark.withAlpha (0.9f)); g.drawLine (xa + 26, y, xb - 26, y, 1.6f);
+        ui::engraved (g, "IN", { xa - 6, y - 8.0f, 30, 16 }, ui::font (12.5f, 2, 0.1f), ui::col::brass, Justification::centred);
+        ui::engraved (g, "OUT", { xb - 28, y - 8.0f, 36, 16 }, ui::font (12.5f, 2, 0.1f), ui::col::brass, Justification::centred);
+        const int n = (int) flowItems.size();
+        const float first = xa + 74.0f, pitch = n > 1 ? 560.0f / (float) (n - 1) : 0.0f;
+        for (int i = 0; i < n; ++i)
+        {
+            const float cx = first + pitch * (float) i;
+            ui::engraved (g, flowItems[(size_t) i].label, { cx - 40.0f, y + 16.0f, 80.0f, 16.0f }, ui::font (12.5f, 2, 0.08f), ui::col::cream);
+            if (i + 1 < n)
+            {
+                const float ax = cx + pitch * 0.5f; Path t; t.addTriangle (ax - 3, y - 3.5f, ax - 3, y + 3.5f, ax + 3.5f, y); g.setColour (ui::col::brass); g.fillPath (t);
+            }
+        }
+        ui::engraved (g, "Lamps switch each stage on and off.  The master limiter always guards the output.", { (float) rFlow.getX() + 20.0f, (float) rFlow.getBottom() - 38.0f, 700.0f, 16.0f },
+                      ui::font (11.5f, 1, 0.03f), dim, Justification::centredLeft);
     }
 
     // info bar
@@ -560,10 +703,25 @@ void MainUI::paint (Graphics& g)
         auto in = r.reduced (14, 4);
         ui::engraved (g, "RIDDIM LAB  |  ECLECTIC PRODZ", in.removeFromLeft (230), ui::font (12.5f, 2, 0.12f), ui::col::brass, Justification::centredLeft);
         auto right = in.removeFromRight (300);
-        ui::engraved (g, String (rp::kSecName[sec]) + "   LATENCY " + String (proc.getLatencySamples()) + " smp", right, ui::font (12.5f, 2, 0.1f), ui::col::creamDim, Justification::centredRight);
+        ui::engraved (g, tabTitle (sec) + "   LATENCY " + String (proc.getLatencySamples()) + " smp", right, ui::font (12.5f, 2, 0.1f), ui::col::creamDim, Justification::centredRight);
         ui::engraved (g, infoText.isEmpty() ? String ("Hover a control to see what it does.  Double-click a knob to reset it.") : infoText, in, ui::font (14.0f, 1, 0.03f),
                       infoText.isEmpty() ? ui::col::creamDim : ui::col::amber, Justification::centredLeft);
     }
+}
+
+//------------------------------------------------------------------ Piano Bang voicings (EQ + tape + source in one click)
+void MainUI::applyPianoVoicing (int which)
+{
+    for (auto& [p, v] : rp::pianoVoicing (which)) setParam (rp::Keys, p, v);
+    setInfo (which == 0 ? "OLD SCHOOL: upright piano on tape. Warm lows, forward mids, soft top, a little wobble."
+                        : "MODERN: clean, bright, hammer-forward stage piano. Scooped mids, air on top, no tape colour.");
+}
+
+bool MainUI::pianoVoicingMatches (int which) const
+{
+    for (auto& [p, v] : rp::pianoVoicing (which))
+        if (std::abs (proc.parameters.getRawParameterValue (rp::id (rp::Keys, p))->load() - v) > 0.011f * jmax (1.0f, std::abs (v))) return false;
+    return true;
 }
 
 //------------------------------------------------------------------ meters / animation
@@ -581,6 +739,7 @@ void MainUI::timerCallback()
     meterGr.setPosition (needle[3]);
     ladder.setLevels (oL, oR);
     deck.setActivity (jmax (oL, oR) > 0.002f);
+    if (sec == rp::Keys) { oldSchoolB.setToggleState (pianoVoicingMatches (0), dontSendNotification); modernB.setToggleState (pianoVoicingMatches (1), dontSendNotification); }
 }
 
 //------------------------------------------------------------------ presets
@@ -691,7 +850,7 @@ void MainUI::showLoadMenu()
 
 void MainUI::saveUserPreset()
 {
-    auto* w = new AlertWindow ("Save preset", String ("Name for this ") + rp::kSecName[sec] + " preset. It saves the settings of the current tab.", MessageBoxIconType::NoIcon, this);
+    auto* w = new AlertWindow ("Save preset", String ("Name for this ") + tabTitle (sec) + " preset. It saves the settings of the current tab.", MessageBoxIconType::NoIcon, this);
     w->addTextEditor ("name", currentName.isNotEmpty() && currentFactory < 0 ? currentName : String(), "Preset name");
     w->addButton ("Save", 1, KeyPress (KeyPress::returnKey));
     w->addButton ("Cancel", 0, KeyPress (KeyPress::escapeKey));

@@ -74,7 +74,7 @@ void RiddimLabAudioProcessor::prepareToPlay (double sampleRate, int)
 {
     sr = sampleRate;
     L.assign ((size_t) kChunk, 0.0f); R.assign ((size_t) kChunk, 0.0f);
-    source.prepare (sr); comp.prepare (sr); eq.prepare (sr); tape.prepare (sr);
+    source.prepare (sr); comp.prepare (sr); steady.prepare (sr); eq.prepare (sr); tape.prepare (sr);
     echo.prepare (sr, kChunk); delay.prepare (sr, kChunk); mod.prepare (sr, kChunk);
     reverb.prepare (sr); limiter.prepare (sr);
     for (int c = 0; c < 2; ++c)
@@ -169,15 +169,24 @@ void RiddimLabAudioProcessor::runChunk (float* l, float* r, int n, int sec, bool
     }
 
     // --- source voicing (instrument tabs) ----------------------------------
-    if (s != Master && g (SrcOn) > 0.5f)
+    if (rp::avail (s, rp::MSrc) && g (SrcOn) > 0.5f)
     {
         float k[3];
         for (int i = 0; i < 3; ++i) k[i] = g (sourceParam (s, gMode, i));
-        source.process (l, r, n, sec, gMode, k);
+        source.process (l, r, n, s == Keys ? (int) Drums : sec, gMode, k);   // Piano Bang reuses the transient voicing
     }
 
+    // --- SteadyBass (Bass tab) ----------------------------------------------
+    float sbGr = 0.0f;
+    if (rp::avail (s, rp::MSteady) && g (SbOn) > 0.5f)
+    {
+        riddim::SteadyBass::Params sp; sp.amount = g (SbAmount); sp.punch = g (SbPunch); sp.weight = g (SbWeight);
+        sbGr = steady.process (l, r, n, sp);
+    }
+    else steady.reset();
+
     // --- filter on the input (route = Input) -------------------------------
-    const bool filtOn = g (FiltOn) > 0.5f;
+    const bool filtOn = rp::avail (s, rp::MFilt) && g (FiltOn) > 0.5f;
     const int route = juce::roundToInt (g (FilterRoute));
     const int fmode = juce::jlimit (0, 2, juce::roundToInt (g (FilterMode)));
     const float cutoff = g (Cutoff), res = g (Resonance);
@@ -195,14 +204,14 @@ void RiddimLabAudioProcessor::runChunk (float* l, float* r, int n, int sec, bool
 
     // --- compressor ---------------------------------------------------------
     float gr = 0.0f;
-    if (g (CompOn) > 0.5f)
+    if (rp::avail (s, rp::MComp) && g (CompOn) > 0.5f)
     {
         riddim::Compressor::Params cp;
         cp.threshDb = g (CompThresh); cp.ratio = g (CompRatio); cp.makeupDb = g (CompMakeup); cp.mode = juce::roundToInt (g (CompMode));
         gr = comp.process (l, r, n, cp);
     }
     else comp.reset();
-    compGr.store (gr);
+    compGr.store (juce::jmax (gr, sbGr));
 
     // --- tone EQ ------------------------------------------------------------
     if (g (EqOn) > 0.5f) { eq.set (g (EqLow), g (EqMid), g (EqHigh), g (EqPres)); eq.process (l, r, n); }
@@ -238,7 +247,7 @@ void RiddimLabAudioProcessor::runChunk (float* l, float* r, int n, int sec, bool
     echoWasOn = echoOn;
 
     // --- rhythm delay --------------------------------------------------------
-    const bool dlyOn = g (DlyOn) > 0.5f;
+    const bool dlyOn = false;   // second delay removed from the interface
     if (dlyOn)
     {
         static const double dbeats[] = { 0.25, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0 };
@@ -251,7 +260,7 @@ void RiddimLabAudioProcessor::runChunk (float* l, float* r, int n, int sec, bool
     delayWasOn = dlyOn;
 
     // --- modulation ----------------------------------------------------------
-    const bool modOn = g (ModOn) > 0.5f;
+    const bool modOn = false;   // modulation removed from the interface
     if (modOn)
     {
         riddim::ModStage::Params mp;

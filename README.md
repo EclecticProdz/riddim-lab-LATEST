@@ -38,6 +38,6 @@ Keep monitoring levels conservative during first tests.
 
 
 ## Approved navigation order
-Master → Drums → Guitar (Chop / Pick / Rhythm) → Bass → Keys → Horns → Vocal.
+Master → Drums → Guitar (Chop / Pick / Rhythm) → Bass → Piano Bang → Horns → Vocal.
 
 See `ARTWORK_INTEGRATION_STATUS.md` and `Assets/` for the current artwork handoff. The mockup and grouped artwork sheets are visual assets; they are not themselves a compiled plugin UI.

@@ -34,6 +34,7 @@ enum P
     DlyOn, DlyType, DlyDiv, DlyFeedback, DlyMix,
     LimOn, LimThresh, LimRelease, LimCeiling, LimSoft,
     SrcOn, Src1, Src2, Src3, Src4, Src5, Src6, Src7, Src8, Src9,
+    SbOn, SbAmount, SbPunch, SbWeight,
     NumP
 };
 
@@ -96,7 +97,7 @@ inline const Spec& spec (P p)
         { "damping",    "Repeat Damping",   KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
 
         { "revOn",      "Reverb On",        KBool,   0, 1, 1, 1, nullptr, 0 },
-        { "revType",    "Reverb Type",      KChoice, 0, 4, 1, 1, "Spring|Plate|Hall|Room|Dub", 0 },
+        { "revType",    "Reverb Type",      KChoice, 0, 1, 1, 1, "Spring|Plate", 0 },
         { "revPre",     "Reverb Pre-delay", KFloat,  0.0f, 120.0f, 1.0f, 1.0f, nullptr, 0 },
         { "revDecay",   "Reverb Decay",     KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
         { "revMix",     "Reverb Mix",       KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
@@ -129,6 +130,11 @@ inline const Spec& spec (P p)
         { "src7",       "Rhythm 1",         KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 3 },
         { "src8",       "Rhythm 2",         KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 3 },
         { "src9",       "Rhythm 3",         KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 3 },
+
+        { "sbOn",       "SteadyBass On",    KBool,   0, 1, 1, 1, nullptr, 4 },
+        { "sbAmount",   "SteadyBass Amount",KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 4 },
+        { "sbPunch",    "SteadyBass Punch", KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 4 },
+        { "sbWeight",   "SteadyBass Weight",KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 4 },
     }};
     return table[(size_t) p];
 }
@@ -140,6 +146,7 @@ inline bool exists (Sec s, P p)
     if (sc == 0) return true;
     if (sc == 1) return s == Master;
     if (sc == 2) return s != Master;
+    if (sc == 4) return s == Bass;
     return s == Guitar && (p >= Src4 && p <= Src9);   // guitar-only (Src1..3 exist for every instrument)
 }
 
@@ -214,6 +221,8 @@ inline float defaultValue (Sec s, P p)
         case LimRelease: v = 120.0f; break;
         case LimCeiling: v = -0.3f; break;
         case LimSoft: v = 0.0f; break;
+        case SbOn: v = 1.0f; break;
+        case SbAmount: case SbPunch: case SbWeight: v = 0.5f; break;
         case Src1: case Src2: case Src3: case Src4: case Src5: case Src6: case Src7: case Src8: case Src9: v = 0.5f; break;
         default: break;
     }
@@ -224,7 +233,7 @@ inline float defaultValue (Sec s, P p)
     setIf (Drums, CompOn, 1); setIf (Drums, CompThresh, -16); setIf (Drums, CompRatio, 4); setIf (Drums, CompMakeup, 3); setIf (Drums, CompMode, 1);
     setIf (Drums, TapeSat, 0.30f); setIf (Drums, Wow, 0.02f); setIf (Drums, Flutter, 0.02f);
     setIf (Drums, Mix, 0.12f); setIf (Drums, Feedback, 0.30f); setIf (Drums, Division, 1);
-    setIf (Drums, RevType, 3); setIf (Drums, RevMix, 0.10f); setIf (Drums, RevDecay, 0.35f);
+    setIf (Drums, RevType, 0); setIf (Drums, RevMix, 0.10f); setIf (Drums, RevDecay, 0.35f);
     setIf (Drums, EqLow, 2); setIf (Drums, EqHigh, 2);
     setIf (Drums, Src1, 0.65f); setIf (Drums, Src2, 0.45f); setIf (Drums, Src3, 0.40f);
     // GUITAR
@@ -235,8 +244,7 @@ inline float defaultValue (Sec s, P p)
     setIf (Guitar, Src4, 0.50f); setIf (Guitar, Src5, 0.40f); setIf (Guitar, Src6, 0.20f);
     setIf (Guitar, Src7, 0.50f); setIf (Guitar, Src8, 0.30f); setIf (Guitar, Src9, 0.30f);
     // BASS
-    setIf (Bass, CompOn, 1); setIf (Bass, CompThresh, -20); setIf (Bass, CompRatio, 4); setIf (Bass, CompMakeup, 2);
-    setIf (Bass, Mix, 0.10f); setIf (Bass, Feedback, 0.30f); setIf (Bass, Division, 3); setIf (Bass, Cutoff, 1500); setIf (Bass, TapeSat, 0.25f);
+        setIf (Bass, Mix, 0.10f); setIf (Bass, Feedback, 0.30f); setIf (Bass, Division, 3); setIf (Bass, Cutoff, 1500); setIf (Bass, TapeSat, 0.25f);
     setIf (Bass, EqLow, 2); setIf (Bass, EqHigh, -2);
     setIf (Bass, Src1, 0.50f); setIf (Bass, Src2, 0.50f); setIf (Bass, Src3, 0.25f);
     // KEYS
@@ -246,7 +254,7 @@ inline float defaultValue (Sec s, P p)
     setIf (Keys, Src1, 0.50f); setIf (Keys, Src2, 0.30f); setIf (Keys, Src3, 0.40f);
     // HORNS
     setIf (Horns, Mix, 0.22f); setIf (Horns, Feedback, 0.38f); setIf (Horns, Division, 0);
-    setIf (Horns, RevType, 2); setIf (Horns, RevMix, 0.18f); setIf (Horns, RevDecay, 0.55f);
+    setIf (Horns, RevType, 1); setIf (Horns, RevMix, 0.18f); setIf (Horns, RevDecay, 0.55f);
     setIf (Horns, EqPres, 3);
     setIf (Horns, Src1, 0.50f); setIf (Horns, Src2, 0.50f); setIf (Horns, Src3, 0.30f);
     // VOCAL
@@ -270,7 +278,7 @@ inline SourceInfo sourceInfo (Sec s, int guitarMode)
                           : guitarMode == 1 ? SourceInfo { "GUITAR  /  PICK", { "BRIGHTNESS", "ATTACK", "LOW CUT" } }
                                             : SourceInfo { "GUITAR  /  RHYTHM", { "BODY", "WARMTH", "GLUE" } };
         case Bass:   return { "ROOTS PRESSURE", { "PRESSURE", "WEIGHT", "GROWL" } };
-        case Keys:   return { "SHEEN  &  SWAY", { "SHEEN", "SWAY", "RATE" } };
+        case Keys:   return { "PIANO  BANG", { "BANG", "RING", "HAMMER" } };
         case Horns:  return { "BRASS", { "BITE", "BODY", "SOFTEN" } };
         case Vocal:  return { "VOCAL TOOLS", { "DE-ESS", "AIR", "WARMTH" } };
         default:     return { "", { "", "", "" } };
@@ -282,6 +290,39 @@ inline P sourceParam (Sec s, int guitarMode, int knob)
 {
     const int base = (s == Guitar ? guitarMode * 3 : 0) + knob;
     return (P) ((int) Src1 + base);
+}
+
+
+// Which processing modules exist on which tab. The audio engine skips modules that
+// a tab does not offer, so nothing hidden can colour the sound.
+enum Module { MSrc, MSteady, MFilt, MComp, MEq, MTape, MEcho, MRev, MLim };
+inline bool avail (Sec s, Module m)
+{
+    switch (m)
+    {
+        case MSrc:    return s != Master && s != Bass;
+        case MSteady: return s == Bass;
+        case MFilt:   return s == Master || s == Guitar || s == Horns;
+        case MComp:   return s == Drums || s == Vocal;
+        case MLim:    return s == Master;
+        default:      return true;
+    }
+}
+
+// Piano Bang voicings: one click sets EQ + tape + source knobs on the Keys tab.
+// 0 OLD SCHOOL: upright piano on tape. Warm lows, forward honky mids, rolled-off top, a little tape wobble.
+// 1 MODERN: clean stage-piano tone in the Yamaha Motif ES mould. Scooped boxy mids, bright hammer and air, no tape colour.
+inline const std::vector<std::pair<P, float>>& pianoVoicing (int which)
+{
+    static const std::vector<std::pair<P, float>> old
+        { { EqOn, 1 }, { EqLow, 3.0f }, { EqMid, 1.5f }, { EqHigh, -4.5f }, { EqPres, 1.0f },
+          { TapeOn, 1 }, { TapeType, 1 }, { TapeSat, 0.38f }, { TapeTone, 0.50f }, { Wow, 0.08f }, { Flutter, 0.05f }, { Wear, 0.15f },
+          { Src1, 0.62f }, { Src2, 0.30f }, { Src3, 0.55f } };
+    static const std::vector<std::pair<P, float>> modern
+        { { EqOn, 1 }, { EqLow, 1.0f }, { EqMid, -2.0f }, { EqHigh, 3.5f }, { EqPres, 3.0f },
+          { TapeOn, 1 }, { TapeType, 0 }, { TapeSat, 0.08f }, { TapeTone, 0.92f }, { Wow, 0.0f }, { Flutter, 0.0f }, { Wear, 0.0f },
+          { Src1, 0.50f }, { Src2, 0.55f }, { Src3, 0.72f } };
+    return which == 0 ? old : modern;
 }
 
 } // namespace rp

@@ -59,6 +59,7 @@ private:
 
     riddim::SourceStage source;
     riddim::Compressor comp;
+    riddim::SteadyBass steady;
     riddim::ToneEQ eq;
     riddim::TapeStage tape;
     riddim::DubEcho echo;

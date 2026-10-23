@@ -25,6 +25,10 @@ private:
     void place (juce::Component& c, float cx, int top, int w, int h);
 
     void selectTab (int section, int guitarMode, bool writeParams);
+    void layoutControls();
+    void applyPianoVoicing (int which);
+    bool pianoVoicingMatches (int which) const;
+    static juce::String tabTitle (int section);
     void rebindAll();
     void updateEchoTimeBinding();
     void setInfo (const juce::String&);
@@ -49,19 +53,23 @@ private:
     juce::String infoText;
 
     // layout rectangles
+    enum class BKind { Src, Steady, Filter, Comp, Eq, Limiter };
+    struct BPanel { BKind kind; juce::Rectangle<int> r; };
+    struct FlowItem { juce::String label; rp::P param; bool master; };
+    std::vector<BPanel> rowB;
+    std::vector<FlowItem> flowItems;
     juce::Rectangle<int> rHeaderArt, rVuPanel, rPreset, rLibrary, rInfo,
-        rInput, rMeters, rOutput, rFlow, rFilter, rComp, rEq, rTape, rEcho, rReverb, rMod, rDelay, rLimSrc;
+        rInput, rMeters, rOutput, rFlow, rTape, rEcho, rReverb;
 
     // widgets
-    juce::TextButton nav[7], sub[3];
+    juce::TextButton nav[7], sub[3], oldSchoolB, modernB;
     std::vector<std::unique_ptr<KnobDef>> knobs;
     std::vector<std::unique_ptr<ui::Lamp>> lamps;
     std::vector<std::unique_ptr<ui::ChoiceLamps>> choices;
     ui::Lamp *lSat = nullptr, *lAnalog = nullptr, *lSync = nullptr, *lSoft = nullptr, *lBypass = nullptr, *lThrow = nullptr, *lPanic = nullptr,
-             *pFilt = nullptr, *pComp = nullptr, *pEq = nullptr, *pTape = nullptr, *pEcho = nullptr, *pRev = nullptr, *pMod = nullptr, *pDly = nullptr, *pLim = nullptr, *pSrc = nullptr;
-    ui::Lamp* flow[10] {};
-    ui::ChoiceLamps *cFilterMode = nullptr, *cFilterRoute = nullptr, *cCompMode = nullptr, *cTapeType = nullptr, *cEchoType = nullptr,
-                    *cRevType = nullptr, *cModType = nullptr, *cDlyType = nullptr;
+             *pFilt = nullptr, *pComp = nullptr, *pEq = nullptr, *pTape = nullptr, *pEcho = nullptr, *pRev = nullptr, *pLim = nullptr, *pSrc = nullptr, *pSteady = nullptr;
+    ui::Lamp* flow[9] {};
+    ui::ChoiceLamps *cFilterMode = nullptr, *cFilterRoute = nullptr, *cCompMode = nullptr, *cTapeType = nullptr, *cEchoType = nullptr, *cRevType = nullptr;
     std::vector<ui::Knob*> limKnobs, srcKnobs;
     ui::Knob* echoTimeKnob = nullptr;
 

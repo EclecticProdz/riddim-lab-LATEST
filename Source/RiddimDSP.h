@@ -883,4 +883,84 @@ private:
     double sr = 48000.0; float env = 1.0f, lastGr = 0.0f;
 };
 
+//==============================================================================
+//  STEADYBASS - weight-preserving bass leveller
+//   * detector: DC-blocked RMS (22 ms), so a 40 Hz wave does not ripple the gain
+//   * threshold follows the player's own average level, so it works at any input level
+//   * slow attack ("punch") lets each note's front edge through
+//   * low band (< 220 Hz, one-pole split, no latency) gets less gain reduction than the
+//     mids/highs (WEIGHT), so the fundamental keeps its body
+//   * automatic make-up matches the long-term loudness of input and output
+//==============================================================================
+class SteadyBass
+{
+public:
+    struct Params { float amount = 0.5f, punch = 0.5f, weight = 0.5f; };
+
+    void prepare (double sampleRate) { sr = sampleRate; reset(); }
+    void reset()
+    {
+        dcL = dcR = lpL = lpR = 0.0f; env = 0.0f; refDb = -30.0f; primed = false; grDb = 0.0f; grLow = 0.0f; pin = pout = 0.0f; makeup = 1.0f; lastGr = 0.0f; warm = 0.0f; nAct = 0.0f;
+    }
+
+    // Level-follower design: the detector tracks each note's envelope, a slow "typical loud note" reference is learned
+    // from the playing, and the gain moves notes toward it (quiet notes lifted, hard notes pulled down).
+    // The gain is smoothed and frequency-weighted: the fundamental region (< ~220 Hz) moves less than the upper partials,
+    // so evening out the level never thins the low end. No look-ahead, so there is no latency and no phase change.
+    // returns the largest gain reduction (positive dB) in this block
+    float process (float* l, float* r, int n, const Params& p)
+    {
+        const float cDc = onePoleCoef (1.0f / (6.2832f * 30.0f), sr);
+        const float cEa = onePoleCoef (0.004f, sr), cEr = onePoleCoef (0.06f, sr);
+        const float cRu = onePoleCoef (1.5f, sr), cRd = 0.0f;
+        const float cLp = 1.0f - std::exp (-6.2832f * 220.0f / (float) sr);
+        const float att = onePoleCoef ((6.0f + 40.0f * p.punch) * 0.001f, sr), rel = onePoleCoef (0.10f, sr);
+        const float cLoud = onePoleCoef (3.0f, sr), cMk = onePoleCoef (1.2f, sr);
+        const float ratio = 1.0f + p.amount * 8.0f, slope = 1.0f / ratio - 1.0f;
+        const float maxLift = 3.0f + 9.0f * p.amount, knee = 4.0f;
+        const float lowShare = 1.0f - 0.3f * p.weight;                       // the fundamental region moves a little less than the upper partials
+        const float cSlow = onePoleCoef ((4.0f + 70.0f * p.weight) * 0.001f, sr);   // ...and arrives a little later, so the note's thump survives
+        float maxGr = 0.0f;
+        for (int i = 0; i < n; ++i)
+        {
+            const float x0 = l[i], x1 = r[i];
+            dcL += cDc * (x0 - dcL); dcR += cDc * (x1 - dcR);
+            const float d = juce::jmax (std::abs (x0 - dcL), std::abs (x1 - dcR));
+            const float pwr = d * d;
+            env += (pwr > env ? cEa : cEr) * (pwr - env);                 // fast attack, note-length release
+            const float levelDb = 10.0f * std::log10 (env + 1.0e-12f) + 3.01f;
+            const bool active = levelDb > -55.0f;
+            if (active)
+            {
+                if (! primed) { refDb = levelDb; primed = true; }
+                else { nAct += 1.0f; refDb += juce::jmax (cRu, 1.0f / nAct) * (levelDb - refDb); }   // the player's typical level (plain average at first)
+            }
+            const float dev = levelDb - refDb;
+            float target = 0.0f;
+            if (dev > knee * 0.5f)        target = slope * (dev - knee * 0.5f) + slope * knee * 0.25f;
+            else if (dev > -knee * 0.5f)  { const float t = dev + knee * 0.5f; target = slope * t * t / (2.0f * knee); }
+            else                          target = juce::jmin (maxLift, (-dev - knee * 0.5f) * (1.0f - 1.0f / ratio) + (1.0f - 1.0f / ratio) * knee * 0.25f);
+            if (! active) target = 0.0f;
+            else if (levelDb < -48.0f) target *= (levelDb + 55.0f) / 7.0f; // fade the lift out into the noise floor
+            grDb += (target < grDb ? att : rel) * (target - grDb);
+            grLow += cSlow * (grDb - grLow);
+            const float gHigh = dbToGain (grDb), gLow = dbToGain (grLow * lowShare);
+            lpL += cLp * (x0 - lpL); lpR += cLp * (x1 - lpR);
+            const float y0 = lpL * gLow + (x0 - lpL) * gHigh, y1 = lpR * gLow + (x1 - lpR) * gHigh;
+            // long-term loudness match (in either direction), so "active" never just means "louder"
+            warm += 1.0f;                                                      // start-up: plain averages until the filters have settled
+            const float cl = juce::jmax (cLoud, 1.0f / warm), cm = cMk;
+            pin += cl * (0.5f * (x0 * x0 + x1 * x1) - pin); pout += cl * (0.5f * (y0 * y0 + y1 * y1) - pout);
+            if (pin > 1.0e-9f) { const float want = juce::jlimit (0.6f, 1.8f, std::sqrt (pin / (pout + 1.0e-12f))); makeup += cm * (want - makeup); }
+            l[i] = y0 * makeup; r[i] = y1 * makeup;
+            maxGr = juce::jmax (maxGr, -grDb);
+        }
+        lastGr = maxGr; return maxGr;
+    }
+    float lastGainReduction() const noexcept { return lastGr; }
+private:
+    double sr = 48000.0; bool primed = false;
+    float dcL = 0, dcR = 0, lpL = 0, lpR = 0, env = 0, refDb = -30.0f, grDb = 0, grLow = 0, pin = 0, pout = 0, makeup = 1.0f, lastGr = 0, warm = 0, nAct = 0;
+};
+
 } // namespace riddim
