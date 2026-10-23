@@ -66,10 +66,10 @@ private:
         const char* td[9] { thumb1_png, thumb2_png, thumb3_png, thumb4_png, thumb5_png, thumb6_png, thumb7_png, thumb8_png, thumb9_png };
         const int ts[9] { thumb1_pngSize, thumb2_pngSize, thumb3_pngSize, thumb4_pngSize, thumb5_pngSize, thumb6_pngSize, thumb7_pngSize, thumb8_pngSize, thumb9_pngSize };
         for (int i = 0; i < 9; ++i) thumbs[i] = img (td[i], ts[i]);
-        barlow[0] = face_ (BarlowCondensed_Regular_ttf, BarlowCondensed_Regular_ttfSize);
-        barlow[1] = face_ (BarlowCondensed_Medium_ttf, BarlowCondensed_Medium_ttfSize);
-        barlow[2] = face_ (BarlowCondensed_SemiBold_ttf, BarlowCondensed_SemiBold_ttfSize);
-        bebas     = face_ (BebasNeue_Regular_ttf, BebasNeue_Regular_ttfSize);
+        barlow[0] = face_ (BarlowCondensedRegular_ttf, BarlowCondensedRegular_ttfSize);
+        barlow[1] = face_ (BarlowCondensedMedium_ttf, BarlowCondensedMedium_ttfSize);
+        barlow[2] = face_ (BarlowCondensedSemiBold_ttf, BarlowCondensedSemiBold_ttfSize);
+        bebas     = face_ (BebasNeueRegular_ttf, BebasNeueRegular_ttfSize);
     }
 };
 
