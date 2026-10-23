@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15-intel
 
     steps:
       - name: Check out source
@@ -20,7 +20,7 @@ jobs:
         run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 
       - name: Build AU and VST3
-        run: cmake --build build --config Release --parallel 3
+        run: cmake --build build --config Release --parallel 4
 
       - name: Ad-hoc sign and package plugins
         shell: bash
