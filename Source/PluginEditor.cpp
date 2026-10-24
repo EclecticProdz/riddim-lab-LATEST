@@ -340,7 +340,14 @@ MainUI::MainUI (RiddimLabAudioProcessor& p) : proc (p)
         monB[i].setButtonText (monNames[i]); monB[i].setTooltip (String (monHelp[i]) + ". Click the lit one again to switch listening off.");
         monB[i].onClick = [this, i] { const int cur = juce::roundToInt (proc.parameters.getRawParameterValue (rp::id (rp::Master, P::CtlMon))->load()); setParam (rp::Master, P::CtlMon, cur == i + 1 ? 0.0f : (float) (i + 1)); };
         roomB[i].setButtonText (roomNames[i]); roomB[i].setTooltip ("Size of the room around the speakers");
-        roomB[i].onClick = [this, i] { setParam (rp::Master, P::CtlRoom, (float) i); };
+        roomB[i].onClick = [this, i]
+        {
+            setParam (rp::Master, P::CtlRoom, (float) i);
+            // the room is part of the listening setup, so choosing one while listening is off switches listening on (midfield monitors)
+            if (juce::roundToInt (proc.parameters.getRawParameterValue (rp::id (rp::Master, P::CtlMon))->load()) == 0) setParam (rp::Master, P::CtlMon, 2.0f);
+            static const char* what[3] { "STUDIO: a small, dry, close room", "CONTROL ROOM: a medium room, tighter and clear", "LIVE ROOM: a big room with a long tail" };
+            setInfo (what[i]);
+        };
     }
     addChildComponent (ledSub);
     backB.setButtonText ("<  EFFECTS"); backB.getProperties().set ("role", "brass"); backB.onClick = [this] { selectPage (PFx, gMode, false); };
@@ -1259,7 +1266,7 @@ void MainUI::paintModuleExtras (Graphics& g, const Mod& m)
         case MK::CtlMon:
             lab ("PICK ONE TO SWITCH LISTENING ON", { (float) r.getX() + 8, (float) r.getBottom() - 30, (float) r.getWidth() - 16, 14 }); break;
         case MK::CtlRoom:
-            lab ("AMBIENCE AROUND THE SPEAKERS", { (float) r.getX() + 8, (float) r.getBottom() - 30, (float) r.getWidth() - 16, 14 }); break;
+            lab ("PICKING A ROOM SWITCHES LISTENING ON", { (float) r.getX() + 8, (float) r.getBottom() - 30, (float) r.getWidth() - 16, 14 }); break;
         case MK::CtlListen:
             lab ("MONITOR ONLY", { (float) r.getX() + 12, (float) r.getBottom() - 46, (float) r.getWidth() - 24, 14 });
             lab ("OFF WHEN YOU EXPORT", { (float) r.getX() + 12, (float) r.getBottom() - 30, (float) r.getWidth() - 24, 14 }); break;

@@ -1,3 +1,9 @@
+# v3.1.1 - Control room: the Room choice is now audible
+
+- The three rooms (Studio, Control Room, Live Room) used to differ by a very quiet reverb tail, 17 to 31 dB below the signal, which is easy to miss under music. The ambience is now about four times stronger and the decay longer, so the three are clearly different: Studio is close and dry, Control Room is medium, Live Room is big with a long tail. Measured with a noise burst: the tail 0.35 to 0.6 seconds after it stops is now -38.6 dB (Studio), -30.5 dB (Control Room) and -23.1 dB (Live Room), against about -19 dB for the burst itself.
+- Room only does anything while listening is on (a Monitor is lit). Choosing a room while listening is off now switches listening on (Midfield) so you hear the change straight away.
+- Still monitor only: it is bypassed when you export or bounce.
+
 # v3.1 - Eight tabs, Dynamics card, living Control room
 
 - **The Master tab is gone from the tab bar** (8 tabs now: Home, Drums, Guitar, Bass, Piano Bang, Horns, Control, Effects).

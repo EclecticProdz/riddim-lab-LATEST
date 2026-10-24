@@ -1292,8 +1292,8 @@ public:
         if (mk != key) { key = mk; configure (p); }
         const float sideG = juce::jlimit (0.3f, 1.6f, p.angle / 60.0f);
         const float lvl = std::pow (10.0f, p.levelDb / 20.0f);
-        static const float roomAmt[3] { 0.05f, 0.11f, 0.20f };
-        static const float roomDec[3] { 0.20f, 0.38f, 0.66f };
+        static const float roomAmt[3] { 0.20f, 0.45f, 0.85f };
+        static const float roomDec[3] { 0.24f, 0.45f, 0.80f };
         const float wet = roomAmt[juce::jlimit (0, 2, p.room)] * juce::jlimit (0.4f, 1.6f, 0.45f + 0.23f * p.dist);
         PlateEngine::Params pp; pp.decay = roomDec[juce::jlimit (0, 2, p.room)]; pp.damp = 0.65f; pp.lowCut = 0.30f; pp.width = 1.0f; pp.tone = 1;
         const int pre = juce::jlimit (1, (int) preL.size() - 1, (int) (p.dist / 343.0f * (float) sr * 0.6f));
