@@ -199,7 +199,7 @@ namespace
         };
         return f;
     }
-    const char* kPageNames[] { "HOME", "MASTER", "DRUMS", "GUITAR", "BASS", "PIANO BANG", "HORNS", "CONTROL", "EFFECTS", "TAPE", "SPRING", "PLATE", "ECHO" };
+    const char* kPageNames[] { "HOME", "DYNAMICS", "DRUMS", "GUITAR", "BASS", "PIANO BANG", "HORNS", "CONTROL", "EFFECTS", "TAPE", "SPRING", "PLATE", "ECHO" };
 }
 
 struct MainUI::Bank { String scope; const std::vector<FactoryPreset>* list; std::vector<P> savable; };
@@ -230,16 +230,16 @@ MainUI::MainUI (RiddimLabAudioProcessor& p) : proc (p)
 
     // ---- tab bar
     {
-        const char* names[9] { "HOME", "MASTER", "DRUMS", "GUITAR", "BASS", "PIANO BANG", "HORNS", "CONTROL", "EFFECTS" };
-        const Page pages[9] { PHome, PMaster, PDrums, PGuitar, PBass, PKeys, PHorns, PControl, PFx };
-        for (int i = 0; i < 9; ++i)
+        const char* names[8] { "HOME", "DRUMS", "GUITAR", "BASS", "PIANO BANG", "HORNS", "CONTROL", "EFFECTS" };
+        const Page pages[8] { PHome, PDrums, PGuitar, PBass, PKeys, PHorns, PControl, PFx };
+        for (int i = 0; i < 8; ++i)
         {
-            tab[i] = std::make_unique<ui::NavTab> (names[i], i == 3 || i == 8);
+            tab[i] = std::make_unique<ui::NavTab> (names[i], i == 2 || i == 7);
             auto* t = tab[i].get();
             t->onClick = [this, i, pg = pages[i], t]
             {
-                if (t->arrowHit && i == 3) { showGuitarMenu(); return; }
-                if (t->arrowHit && i == 8) { showEffectsMenu(); return; }
+                if (t->arrowHit && i == 2) { showGuitarMenu(); return; }
+                if (t->arrowHit && i == 7) { showEffectsMenu(); return; }
                 selectPage (pg, gMode, true);
             };
             addAndMakeVisible (*t);
@@ -280,7 +280,7 @@ MainUI::MainUI (RiddimLabAudioProcessor& p) : proc (p)
     addKnob (K::SubLevel, "SUB LEVEL", 58, 3); addKnob (K::SubHarm, "HARMONICS", 58, 0); addKnob (K::SpkLevel, "LEVEL", 58, 3);
     addKnob (K::PlDamp, "DAMPING", 58, 0); addKnob (K::PlLowCut, "LOW CUT", 58, 0); addKnob (K::PlWidth, "WIDTH", 58, 0); addKnob (K::EchoRev, "REVERB", 58, 0);
     for (auto& kd : knobs) { kd->k->onInfo = info; if (kd->p < K::Src1 || kd->p > K::Src9) { if (kd->k->help.isEmpty()) kd->k->help = kHelp (kd->p); } }
-    for (int i = 0; i < 4; ++i) { cardKnob[i] = std::make_unique<ui::Knob> ("MIX", 58); addChildComponent (*cardKnob[i]); cardKnob[i]->onInfo = info; }
+    for (int i = 0; i < 5; ++i) { cardKnob[i] = std::make_unique<ui::Knob> ("MIX", 58); addChildComponent (*cardKnob[i]); cardKnob[i]->onInfo = info; }
 
     // ---- lamps and choices
     lSat = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::LampLabelRight, "SATURATION", 5.5f));
@@ -296,7 +296,7 @@ MainUI::MainUI (RiddimLabAudioProcessor& p) : proc (p)
     auto pw = [&] { return addLamp (std::make_unique<ui::Lamp> (ui::Lamp::LampOnly, "", 5.0f)); };
     pFilt = pw(); pComp = pw(); pEq = pw(); pTape = pw(); pEcho = pw(); pRev = pw(); pLim = pw(); pSrc = pw(); pSteady = pw();
     for (int i = 0; i < 9; ++i) flow[i] = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::LampOnly, "", 7.0f));
-    for (int i = 0; i < 4; ++i) cardLamp[i] = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::LampOnly, "", 5.0f));
+    for (int i = 0; i < 5; ++i) cardLamp[i] = addLamp (std::make_unique<ui::Lamp> (ui::Lamp::LampOnly, "", 5.0f));
     lSat->onInfo = lAnalog->onInfo = lSync->onInfo = lSoft->onInfo = lBypass->onInfo = lThrow->onInfo = lPanic->onInfo = info;
 
     cFilterMode  = addChoice (std::make_unique<ui::ChoiceLamps> (StringArray { "LOW-PASS", "HIGH-PASS", "BAND-PASS" }, true, 12.5f));
@@ -345,14 +345,15 @@ MainUI::MainUI (RiddimLabAudioProcessor& p) : proc (p)
     addChildComponent (ledSub);
     backB.setButtonText ("<  EFFECTS"); backB.getProperties().set ("role", "brass"); backB.onClick = [this] { selectPage (PFx, gMode, false); };
     addChildComponent (backB);
-    const char* openNames[4] { "OPEN", "OPEN", "OPEN", "OPEN" };
-    for (int i = 0; i < 4; ++i)
+    const char* openNames[5] { "OPEN", "OPEN", "OPEN", "OPEN", "OPEN" };
+    for (int i = 0; i < 5; ++i)
     {
         openB[i].setButtonText (openNames[i]); openB[i].getProperties().set ("role", "recess");
         openB[i].onClick = [this, i]
         {
             if (i == 1) setParam ((rp::Sec) sec, P::RevType, 0);
             if (i == 2) setParam ((rp::Sec) sec, P::RevType, 1);
+            if (i == 4) { selectPage (PMaster, gMode, true); return; }
             selectPage (i == 0 ? PEcho : (i == 1 ? PSpring : (i == 2 ? PPlate : PTape)), gMode, false);
         };
         addChildComponent (openB[i]);
@@ -387,7 +388,7 @@ MainUI::MainUI (RiddimLabAudioProcessor& p) : proc (p)
     });
     sec = jlimit (0, 5, roundToInt (proc.parameters.getRawParameterValue ("activeSection")->load()));
     gMode = jlimit (0, 2, roundToInt (proc.parameters.getRawParameterValue ("guitarMode")->load()));
-    selectPage (pageOfSection (sec), gMode, false);
+    selectPage (sec == rp::Master ? PHome : pageOfSection (sec), gMode, false);
 
     addAndMakeVisible (roomFx); roomFx.toBack();
     addChildComponent (fade);
@@ -445,7 +446,7 @@ String MainUI::pageSubtitle (Page p)
     switch (p)
     {
         case PHome: return String::fromUTF8 ("LIVE ROOM  \xc2\xb7  CLICK AN INSTRUMENT TO JUMP TO ITS TAB");
-        case PMaster: return String::fromUTF8 ("CONTROL ROOM  \xc2\xb7  FINISH THE MIX");
+        case PMaster: return String::fromUTF8 ("FILTER  \xc2\xb7  COMPRESSOR  \xc2\xb7  TONE  \xc2\xb7  LIMITER");
         case PDrums: return "DRUM ROOM";
         case PGuitar: return String::fromUTF8 ("GUITAR ROOM  \xc2\xb7  CHOP / PICK / RHYTHM");
         case PBass: return "BASS ROOM";
@@ -479,8 +480,8 @@ void MainUI::selectPage (Page pg, int guitarMode, bool writeParams)
         for (auto [id, v] : w)
             if (auto* prm = proc.parameters.getParameter (id)) { prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->convertTo0to1 ((float) v)); prm->endChangeGesture(); }
     }
-    const int active = pg == PHome ? 0 : (pg == PControl ? 7 : (pg == PFx || isEffectPage (pg) ? 8 : (pg == PMaster ? 1 : (pg == PDrums ? 2 : (pg == PGuitar ? 3 : (pg == PBass ? 4 : (pg == PKeys ? 5 : 6)))))));
-    for (int i = 0; i < 9; ++i) tab[i]->setActive (i == active);
+    const int active = pg == PHome ? 0 : (pg == PControl ? 6 : (pg == PFx || isEffectPage (pg) || pg == PMaster ? 7 : (pg == PDrums ? 1 : (pg == PGuitar ? 2 : (pg == PBass ? 3 : (pg == PKeys ? 4 : 5))))));
+    for (int i = 0; i < 8; ++i) tab[i]->setActive (i == active);
     currentFactory = -1; currentUserFile = File();
     rebindAll();
     updateRoomFx();
@@ -526,7 +527,7 @@ void MainUI::showGuitarMenu()
     PopupMenu m;
     const char* n[3] { "Chop", "Pick", "Rhythm" };
     for (int i = 0; i < 3; ++i) m.addItem (i + 1, n[i], true, page == PGuitar && gMode == i);
-    m.showMenuAsync (PopupMenu::Options().withTargetComponent (tab[3].get()), [this, safe = SafePointer<MainUI> (this)] (int r) { if (safe != nullptr && r > 0) selectPage (PGuitar, r - 1, true); });
+    m.showMenuAsync (PopupMenu::Options().withTargetComponent (tab[2].get()), [this, safe = SafePointer<MainUI> (this)] (int r) { if (safe != nullptr && r > 0) selectPage (PGuitar, r - 1, true); });
 }
 
 void MainUI::showEffectsMenu()
@@ -536,9 +537,11 @@ void MainUI::showEffectsMenu()
     m.addSeparator();
     m.addItem (2, "Echo", true, page == PEcho); m.addItem (3, "Spring", true, page == PSpring);
     m.addItem (4, "Plate", true, page == PPlate); m.addItem (5, "Tape", true, page == PTape);
-    m.showMenuAsync (PopupMenu::Options().withTargetComponent (tab[8].get()), [this, safe = SafePointer<MainUI> (this)] (int r)
+    m.addItem (6, "Dynamics and Tone", true, page == PMaster);
+    m.showMenuAsync (PopupMenu::Options().withTargetComponent (tab[7].get()), [this, safe = SafePointer<MainUI> (this)] (int r)
     {
         if (safe == nullptr || r <= 0) return;
+        if (r == 6) { selectPage (PMaster, gMode, true); return; }
         if (r == 3) setParam ((rp::Sec) sec, P::RevType, 0);
         if (r == 4) setParam ((rp::Sec) sec, P::RevType, 1);
         selectPage (r == 1 ? PFx : (r == 2 ? PEcho : (r == 3 ? PSpring : (r == 4 ? PPlate : PTape))), gMode, false);
@@ -571,6 +574,7 @@ void MainUI::buildHotspots()
         a = at (440, 400);       hs.push_back ({ "ECHO", a.first, a.second, open (PEcho) });
         a = at (670, 505);       hs.push_back ({ "PLATE", a.first, a.second, open (PPlate) });
         a = at (235, 560);       hs.push_back ({ "SPRING", a.first, a.second, open (PSpring) });
+        a = at (1339, 400);      hs.push_back ({ "DYNAMICS", a.first, a.second, [this] { selectPage (PMaster, gMode, true); } });
     }
     for (auto& h : hs)
     {
@@ -662,6 +666,8 @@ void MainUI::rebindAll()
     cardKnob[3]->bind (proc.parameters, idOf (P::TapeSat), 0, rp::defaultValue (s, P::TapeSat));
     cardLamp[0]->bindParam (proc.parameters, idOf (P::EchoOn)); cardLamp[1]->bindParam (proc.parameters, idOf (P::RevOn));
     cardLamp[2]->bindParam (proc.parameters, idOf (P::RevOn));  cardLamp[3]->bindParam (proc.parameters, idOf (P::TapeOn));
+    cardKnob[4]->bind (proc.parameters, rp::id (rp::Master, P::CompThresh), 3, rp::defaultValue (rp::Master, P::CompThresh));
+    cardLamp[4]->bindParam (proc.parameters, rp::id (rp::Master, P::CompOn));
 
     // signal flow: only the modules this tab really has
     flowItems.clear();
@@ -739,7 +745,7 @@ void MainUI::buildModules()
         case PKeys:   add (MK::Src); add (MK::Eq); add (MK::TapeW); break;
         case PHorns:  add (MK::Src); add (MK::Eq); add (MK::Reverb); add (MK::TapeW); break;
         case PControl: add (MK::CtlMon); add (MK::CtlRoom); add (MK::CtlPos); add (MK::CtlColour); add (MK::CtlListen); break;
-        case PFx:     for (int i = 0; i < 4; ++i) add (MK::FxCard, i); break;
+        case PFx:     for (int i = 0; i < 5; ++i) add (MK::FxCard, i); break;
         case PTape:   add (MK::TapeMain); add (MK::TapeMore); add (MK::TapeTrans); add (MK::TapeOut); break;
         case PSpring: add (MK::SpChar); add (MK::SpKnobs); add (MK::SpTone); add (MK::SpOut); break;
         case PPlate:  add (MK::PlMain); add (MK::PlTone); add (MK::PlOut); break;
@@ -754,7 +760,7 @@ void MainUI::buildModules()
         int used = 0; for (int i = 0; i < 4; ++i) { w[(size_t) i] = fixed[i]; used += fixed[i]; }
         w[4] = total - gap * 4 - used;
     }
-    else if (page == PFx) for (int i = 0; i < n; ++i) w[(size_t) i] = (total - gap * 3) / 4;
+    else if (page == PFx) for (int i = 0; i < n; ++i) w[(size_t) i] = (total - gap * 4) / 5;
     else
     {
         moduleDia = 58;
@@ -819,7 +825,7 @@ static ui::Mat materialOf (int k, int arg)
         case 28: return Mat::Steel;  // PlMain
         case 29: return Mat::Brass;  // PlTone
         case 30: return Mat::Green;  // PlOut
-        case 21: { const Mat c[4] { Mat::Green, Mat::Steel, Mat::Red, Mat::Wood }; return c[arg & 3]; }
+        case 21: { const Mat c[5] { Mat::Green, Mat::Steel, Mat::Red, Mat::Wood, Mat::Brass }; return c[jlimit (0, 4, arg)]; }
         default: return Mat::Dark;
     }
 }
@@ -855,7 +861,7 @@ void MainUI::hideAllControls()
     for (auto& l : lamps) l->setVisible (false);
     for (auto& c : choices) c->setVisible (false);
     for (auto& k : cardKnob) k->setVisible (false);
-    for (auto* c : std::initializer_list<Component*> { &oldSchoolB, &modernB, &styleB[0], &styleB[1], &styleB[2], &backB, &openB[0], &openB[1], &openB[2], &openB[3],
+    for (auto* c : std::initializer_list<Component*> { &oldSchoolB, &modernB, &styleB[0], &styleB[1], &styleB[2], &backB, &openB[0], &openB[1], &openB[2], &openB[3], &openB[4],
                                                          &fIn, &fOut, &fCeil, &ledIn, &ledOut, &ledGr, &ledSub, &monB[0], &monB[1], &monB[2], &roomB[0], &roomB[1], &roomB[2], &drumB[0], &drumB[1], &drumB[2], &drumB[3], &drumB[4], &drumB[5], &spkB[0], &spkB[1], &spkB[2], &spkB[3], &meterIn, &meterGr, &strip })
         c->setVisible (false);
 }
@@ -1019,7 +1025,7 @@ void MainUI::layoutControls()
             {
                 auto* k = cardKnob[m.arg].get();
                 k->setDiameter (58); k->setInk (ui::inkFor (mat), ui::litFor (mat));
-                const char* caps[4] { "MIX", "MIX", "MIX", "DRIVE" };
+                const char* caps[5] { "MIX", "MIX", "MIX", "DRIVE", "THRESHOLD" };
                 k->setCaption (caps[m.arg]);
                 k->setBounds (Rectangle<int> (k->preferredWidth(), k->preferredHeight()).withCentre ({ r.getX() + 64, r.getY() + 36 + 56 }));
                 k->setVisible (true);
@@ -1214,7 +1220,7 @@ void MainUI::layoutControls()
     const bool hasBank = bankFor (page).list != nullptr;
     strip.setBounds (14 + 1252 - 12 - 330, 200 + 358 - 12 - 34, 330, 34);
     strip.setVisible (hasBank);
-    backB.setBounds (26, 210, 118, 30); backB.setVisible (isEffectPage (page));
+    backB.setBounds (26, 210, 118, 30); backB.setVisible (isEffectPage (page) || page == PMaster);
     for (auto& h : hotspots) h->toFront (false);
     if (fade.running()) fade.toFront (false);
     bgDirty = true;
@@ -1229,7 +1235,7 @@ void MainUI::resized()
     rRail = { 14, 152, 1252, 44 };
     rRoom = { 14, 200, 1252, 358 };
     rInfo = { 14, 856, 1252, 28 };
-    for (int i = 0; i < 9; ++i) tab[i]->setBounds (14 + i * 140, 154, 132, 40);
+    for (int i = 0; i < 8; ++i) tab[i]->setBounds (14 + i * 157, 154, 149, 40);
     meterL.setBounds (rMeterPanel.getX() + 22, rMeterPanel.getY() + 10, 190, 117);
     meterR.setBounds (rMeterPanel.getX() + 22 + 190 + 56, rMeterPanel.getY() + 10, 190, 117);
     ladder.setBounds (rMeterPanel.getX() + 22 + 190 + 8, rMeterPanel.getY() + 14, 40, 96);
@@ -1329,8 +1335,8 @@ void MainUI::paintModuleExtras (Graphics& g, const Mod& m)
         case MK::FxCard:
         {
             printLabel (g, "ON", { (float) r.getX() + 156, (float) r.getY() + 48, 40, 20 }, mat, Justification::centredLeft, 12.0f);
-            const char* sub[4] { "DUB TAPE ECHO", "SPRING TANK", "COPPER PLATE", "TAPE MACHINE  A / B / C" };
-            lab (sub[m.arg & 3], { (float) r.getX() + 12, (float) r.getBottom() - 36, (float) r.getWidth() - 24, 16 });
+            const char* sub[5] { "DUB TAPE ECHO", "SPRING TANK", "COPPER PLATE", "TAPE  A / B / C", "FILTER  COMP  EQ  LIMITER" };
+            lab (sub[jlimit (0, 4, m.arg)], { (float) r.getX() + 12, (float) r.getBottom() - 36, (float) r.getWidth() - 24, 16 });
             break;
         }
         case MK::Soon:
@@ -1442,7 +1448,7 @@ void MainUI::paintPage (Graphics& g)
         if (m.k == MK::Eq && page == PKeys) title = "TONE EQ  /  PIANO VOICING";
         if (m.k == MK::Reverb) title = page == PGuitar ? "SPRING REVERB" : "PLATE REVERB";
         if (m.k == MK::RevMain) title = page == PSpring ? "SPRING TANK" : "COPPER PLATE";
-        if (m.k == MK::FxCard) { const char* t[4] { "ECHO", "SPRING", "PLATE", "TAPE" }; const char* ic[4] { "ring", "spring", "plate", "reel" }; title = t[m.arg & 3]; icon = ic[m.arg & 3]; }
+        if (m.k == MK::FxCard) { const char* t[5] { "ECHO", "SPRING", "PLATE", "TAPE", "DYNAMICS" }; const char* ic[5] { "ring", "spring", "plate", "reel", "gauge" }; title = t[jlimit (0, 4, m.arg)]; icon = ic[jlimit (0, 4, m.arg)]; }
         ui::paintModule (g, m.r.toFloat(), materialOf ((int) m.k, m.arg), title, icon, (int) i + 2 + (int) page);
         paintModuleExtras (g, m);
     }

@@ -171,10 +171,10 @@ private:
     juce::Rectangle<int> rHeader, rMeterPanel, rRail, rRoom, rInfo;
 
     // widgets
-    std::unique_ptr<ui::NavTab> tab[9];
+    std::unique_ptr<ui::NavTab> tab[8];
     ui::CogButton cog;
     ui::PresetStrip strip;
-    juce::TextButton backB, styleB[3], oldSchoolB, modernB, openB[4], spkB[4], drumB[6], monB[3], roomB[3];
+    juce::TextButton backB, styleB[3], oldSchoolB, modernB, openB[5], spkB[4], drumB[6], monB[3], roomB[3];
     std::vector<std::unique_ptr<ui::Hotspot>> hotspots;
     RoomFx roomFx;
     void updateRoomFx();
@@ -185,8 +185,8 @@ private:
     ui::Lamp *lMono = nullptr, *lPhones = nullptr, *lLock = nullptr, *lSat = nullptr, *lAnalog = nullptr, *lSync = nullptr, *lSoft = nullptr, *lBypass = nullptr, *lThrow = nullptr, *lPanic = nullptr,
              *pFilt = nullptr, *pComp = nullptr, *pEq = nullptr, *pTape = nullptr, *pEcho = nullptr, *pRev = nullptr, *pLim = nullptr, *pSrc = nullptr, *pSteady = nullptr;
     ui::Lamp* flow[9] {};
-    ui::Lamp* cardLamp[4] {};
-    std::unique_ptr<ui::Knob> cardKnob[4];
+    ui::Lamp* cardLamp[5] {};
+    std::unique_ptr<ui::Knob> cardKnob[5];
     ui::ChoiceLamps *cFilterMode = nullptr, *cFilterRoute = nullptr, *cCompMode = nullptr, *cTapeType = nullptr, *cEchoType = nullptr, *cRevType = nullptr,
                     *cTapeSpeed = nullptr, *cSpChar = nullptr, *cSpLen = nullptr, *cSpStereo = nullptr, *cPlTone = nullptr, *cLock = nullptr;
     ui::Lamp *head[3] {};

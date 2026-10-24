@@ -1,3 +1,21 @@
+# v3.1 - Eight tabs, Dynamics card, living Control room
+
+- **The Master tab is gone from the tab bar** (8 tabs now: Home, Drums, Guitar, Bass, Piano Bang, Horns, Control, Effects).
+- **Its controls moved into Effects as a new "Dynamics" card** (fifth card on the Effects hub, also the DYNAMICS label on the dbx compressor in the picture, and the Effects menu): Filter, Compressor, Tone EQ and Limiter, with the control-room picture and the engineer sitting in his chair. A "< EFFECTS" button takes you back.
+- A new plugin now opens on Home (it used to open on Master).
+- **Control room: no person.** Equipment moves instead, driven by the output level:
+  - the two reels of the tape machine turn while there is signal (the reel part of the picture itself is rotated, so it looks like the picture);
+  - the two big speaker cones pump a little;
+  - the console meter windows brighten and bounce.
+  Switch it all off with Animation: Off in the cog menu.
+- Not changed yet: clicking Dynamics still selects the Master settings profile, the same as the old Master tab did, so the sound can still change when you move between tabs. That is the audio restructure, which is next.
+
+# v3.0.2 - Engineer seated properly
+
+- **Master:** the engineer is drawn with his chair again, but now scaled and placed so his chair lies exactly over the chair in the room picture (the two are the same kind of chair), so there is one chair and he is sitting in it, with his back, shoulders and leg.
+- **Control:** he is bigger and in the foreground, seen from behind, with the bottom of his chair cropped by the edge of the picture, so he is grounded instead of floating. He sits below the stage so the drum kit stays visible.
+- Picture only: positions are in RoomFx.h (buildFigures); the engineer has no floor shadow. Resources/fig_engineer.png is the original again. No sound or parameter changes.
+
 # v3.0 - Speed and page fade
 
 - **Smoother dragging and animation.** The interface used to redraw the whole picture underneath (frame, room photograph, panel shadows, textures) every time anything moved: a knob, a lamp glow or a musician. The fixed part of each page is now drawn once and copied, and only the parts that move are redrawn. In my timing tests the screen work behind one animation frame or knob move dropped by about 20 to 100 times, and a whole-page redraw from about 300 ms to about 40 ms (software timings on a cloud machine at retina scale; your Mac will differ).
