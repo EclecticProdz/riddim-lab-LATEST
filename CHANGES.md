@@ -1,3 +1,65 @@
+# v2.9 - Step 8: Moving figures
+
+- Each room now has its musician, cut out from the figure sheet: drummer (Drums), bassist (Bass), guitarist (Guitar), pianist (Piano Bang), sax player (Horns), engineer at the desk (Master and Control).
+- They sway gently and bob with the output level, with a soft shadow on the floor. They are still pictures moved as a whole, not separately animated limbs.
+- Home: the man sitting on the right now lights his lighter when you click him; smoke drifts up from the flame. Click again to put it out. This replaces the click-the-header-head trigger from v2.7.
+- Figure pictures are Resources/fig_*.png (cut from the supplied sheet). Positions are set in RoomFx.h, function buildFigures().
+
+# v2.8 - Step 7: Sidechain kick/bass lock
+
+- Kick + Bass Lock now has three modes: Off, EQ Lock, Sidechain.
+- **Sidechain:** the drum lows (under about 100 Hz) duck while the bass plays, scaled by Amount (up to 14 dB). It listens to a host sidechain input if one is routed in (the plugin now has an optional second input), otherwise to a Bass tab instance running in the same host. The panel shows which one it found.
+- The Bass tab instance shares a bass level with the Drums instance automatically. The fallback can lag the bass by up to one audio block.
+- Existing sessions: LockOn 0/1 mean the same as before (Off / EQ Lock).
+
+# v2.7 - Step 6: Animation
+
+- **Room lighting:** the lamps and bright spots already in each room picture are found automatically and glow and flicker. They pump gently with the output level.
+- **Lighter and smoke easter egg:** click the Eclectic Prodz head in the header to light a lighter at the bottom left of the room. Smoke drifts up and sways with the music. Click again to put it out.
+- VU needles were already live (since v2.2).
+- Not built: moving figures. There is no artwork for them yet.
+
+# v2.6 - Step 5: Control tab (listening)
+
+- **Monitors:** Nearfield, Midfield, Main (voicing of small desk monitors, medium monitors, big mains). Click the lit one again to switch listening off.
+- **Room:** Studio, Control Room, Live Room (ambience around the speakers).
+- **Speaker position:** Width (speaker angle, 60 deg neutral), Distance (more room, softer top), Toe-in (brighter when turned in).
+- **Colour:** Analog amount. **Listening:** Level, Mono, Headphones (crossfeed).
+- All of this is monitor only: it is bypassed on offline bounce/export and the settings are shared by every tab. It approximates listening setups, it is not a model of one particular speaker or room.
+
+# v2.5 - Step 4: Drums tab
+
+- **Drum selector:** Kick, Snare, Rim, Hat, Toms, Loop. Each gives the drums its own voicing (Loop leaves the sound as it was).
+- **Kick + Bass Lock (EQ lock):** dips the drums under 100 Hz and keeps the kick knock just above it, with an Amount knob. Sidechain lock is not in yet.
+- **Drum presets:** eight drum-specific presets (Deep Dub Kick, Tight Kick, Crack Snare, Fat Snare, Rim Click, Hat Tamer, Roots Toms, Loop Glue). Choosing one also sets the drum type.
+- Drums page rebuilt: Drum Source (selector + knobs), Compressor (mode now under the knobs), Tone EQ, Kick + Bass Lock, Tape Warmth.
+
+# v2.4 - Step 3: Bass tab
+
+- **Sub 30-50 Hz:** Sub Level (-12 to +12 dB, only that band), Harmonics (adds upper harmonics so the note reads on small speakers), live sub-band meter.
+- **Speaker Check:** Phone, Laptop, 14" MacBook, Studio Monitor, plus Level. Monitor only: bypassed during offline bounce/export, never saved in presets. Click the active button again to switch off.
+- Bass page rebuilt to five modules: SteadyBass, Tone EQ, Sub, Speaker Check, Tape Warmth.
+- Note: Harmonics defaults to 25%, so existing Bass sessions gain a little upper content.
+
+# v2.3 - Step 2: Effects
+
+- **Tape:** Type A Clean / B Weight / C Vintage; Speed 7.5/15/30 IPS (moves head bump and top end); Stability (wow + slow drift); Mix (parallel tape).
+- **Spring:** new spring engine, 7 characters (Drip, Roots, Twang, Heavy, Surf, Dark Tank, Shimmer), Short/Med/Long, Drive, Feedback, Treble, Bass, Stereo/Mono. Replaces the old generic reverb, so old sessions will sound different.
+- **Plate:** new plate engine with Damping, Low cut, Width, Bright/Natural/Dark.
+- **Echo:** playback heads H1/H2/H3 and a Reverb-in-loop knob.
+- New factory presets for Tape, Spring, Plate and Echo.
+- Tested numerically only. No listening tests yet.
+
+# v2.2 - new interface (build step 1 of the redesign)
+
+* New layout from the approved mock-ups: full-brightness logo header (the dimming vignette is gone), wide meter panel with a Settings cog, walnut tab bar with polished-brass active tab.
+* Tabs: HOME, MASTER, DRUMS, GUITAR (Chop / Pick / Rhythm), BASS, PIANO BANG, HORNS, CONTROL, EFFECTS (hub + Echo, Spring, Plate, Tape pages). The Vocal tab is gone from the interface.
+* Each tab has its own room picture and its own preset strip (PRESET < name > SAVE). Instrument tabs save the whole tab; each effect page has its own presets and saves only its effect. Whole-plugin presets are in the Settings cog (Save / Load everything).
+* Colour-coded modules (green / steel / red / brass / wood) with 0-10 printed knob scales, ribbed faders, recessed buttons, LED columns.
+* Master tab now has a compressor (it is off by default, so existing sounds do not change). The Filter module moved from the Guitar and Horns tabs to the Echo page ("Echo Filter").
+* The old LIBRARY and PRESET panels are removed; the factory presets are on each tab's preset strip.
+* Not built yet (later steps): real Tape A/B/C, real Spring and upgraded Plate/Echo engines, Bass sub meter and speaker check, Drum selector and Kick/Bass lock, Control-room listening, animation and figures.
+
 # Riddim Lab v2.1 - simpler interface, SteadyBass, Piano Bang
 
 ## Interface trimmed ("keep the tabs, trim each")

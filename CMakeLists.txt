@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(RiddimLab VERSION 2.0.0)
+project(RiddimLab VERSION 2.9.0)
 
 include(FetchContent)
 FetchContent_Declare(JUCE
@@ -14,6 +14,7 @@ FetchContent_MakeAvailable(JUCE)
 # Resources/*.png are produced by Tools/gen_assets.py.
 file(GLOB RIDDIM_RESOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/Resources/*.png
+    ${CMAKE_CURRENT_SOURCE_DIR}/Resources/*.jpg
     ${CMAKE_CURRENT_SOURCE_DIR}/Resources/*.ttf)
 juce_add_binary_data(RiddimLabArtwork SOURCES ${RIDDIM_RESOURCES})
 
@@ -40,6 +41,7 @@ target_sources(RiddimLab PRIVATE
     Source/RiddimDSP.h
     Source/RiddimParams.h
     Source/RiddimUI.h
+    Source/RoomFx.h
 )
 target_compile_features(RiddimLab PUBLIC cxx_std_17)
 target_compile_definitions(RiddimLab PUBLIC
