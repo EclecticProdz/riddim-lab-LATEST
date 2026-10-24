@@ -390,9 +390,15 @@ MainUI::MainUI (RiddimLabAudioProcessor& p) : proc (p)
     selectPage (pageOfSection (sec), gMode, false);
 
     addAndMakeVisible (roomFx); roomFx.toBack();
+    addChildComponent (fade);
+    animMode = loadAnimMode();
+    roomFx.setActive (animMode != 2);
     updateRoomFx();
     setSize (kW, kH);
+    // animation runs on the display's own refresh (60 fps); the slower timer is only a safety net in case a host never delivers refresh callbacks
+    vblank = std::make_unique<VBlankAttachment> (this, [this] { onFrame (false); });
     startTimerHz (30);
+    ready = true;
 }
 
 MainUI::~MainUI()
@@ -457,6 +463,12 @@ String MainUI::pageSubtitle (Page p)
 
 void MainUI::selectPage (Page pg, int guitarMode, bool writeParams)
 {
+    // picture of the page we are leaving, for the dissolve
+    const juce::Rectangle<int> fadeArea (0, 196, kW, kH - 196);
+    const bool doFade = ready && pg != page && animMode != 2 && (isShowing() || fadeForTest);
+    juce::Image snap;
+    if (doFade) snap = createComponentSnapshot (fadeArea, true, lastPs);
+
     const int s = sectionOfPage (pg);
     if (s >= 0) sec = s;
     page = pg; gMode = jlimit (0, 2, guitarMode);
@@ -475,7 +487,13 @@ void MainUI::selectPage (Page pg, int guitarMode, bool writeParams)
     refreshUserPresets();
     currentName = proc.parameters.state.getProperty ("presetName_" + String ((int) page), "").toString();
     strip.setName (currentName);
+    bgDirty = true; slowCount = 5;
     repaint();
+    if (doFade)
+    {
+        ensureBg (lastPs);          // draw the new page's background now, so the dissolve starts smoothly afterwards
+        fade.start (snap, fadeArea, 0.4f);
+    }
 }
 
 void MainUI::updateRoomFx()
@@ -1198,6 +1216,8 @@ void MainUI::layoutControls()
     strip.setVisible (hasBank);
     backB.setBounds (26, 210, 118, 30); backB.setVisible (isEffectPage (page));
     for (auto& h : hotspots) h->toFront (false);
+    if (fade.running()) fade.toFront (false);
+    bgDirty = true;
     repaint();
 }
 
@@ -1327,7 +1347,8 @@ void MainUI::paintModuleExtras (Graphics& g, const Mod& m)
     (void) col;
 }
 
-void MainUI::paint (Graphics& g)
+// The part of the picture that is the same on every page (wood frame, plate, logo, meters panel, tab rail). Drawn once per screen scale.
+void MainUI::paintChrome (Graphics& g)
 {
     auto& A = ui::Assets::get();
     // wood frame + dark back plate (no vignette: the logo area stays at full brightness)
@@ -1358,6 +1379,12 @@ void MainUI::paint (Graphics& g)
         g.setColour (ui::col::brass.withAlpha (0.35f)); g.drawRoundedRectangle (r.reduced (2.5f), 5.0f, 1.0f);
     }
 
+}
+
+// The part that changes from page to page: room picture, module panels and labels, info bar frame.
+void MainUI::paintPage (Graphics& g)
+{
+    auto& A = ui::Assets::get();
     // room picture
     {
         const bool hub = page == PFx;
@@ -1380,9 +1407,10 @@ void MainUI::paint (Graphics& g)
         }
         auto rr = Rectangle<float> (14, 200, 1252, hub ? 440.0f : 358.0f);
         Path clip; clip.addRoundedRectangle (rr, 6.0f);
-        DropShadow (Colours::black.withAlpha (0.8f), 9, { 0, 4 }).drawForPath (g, clip);
+        ui::softShadow (g, rr, 6.0f, 9.0f, { 0, 4 }, 0.8f);
         g.saveState(); g.reduceClipRegion (clip);
         g.setColour (Colours::white);
+        g.setImageResamplingQuality (ui::pixelScaleOf (g) * rr.getWidth() >= (float) im->getWidth() * 0.9f ? Graphics::mediumResamplingQuality : Graphics::highResamplingQuality);
         g.drawImage (*im, rr, RectanglePlacement::stretchToFit);
         g.restoreState();
         g.setColour (Colours::black.withAlpha (0.95f)); g.drawRoundedRectangle (rr.reduced (0.7f), 6.0f, 1.6f);
@@ -1419,18 +1447,72 @@ void MainUI::paint (Graphics& g)
         paintModuleExtras (g, m);
     }
 
-    // info bar
+    // info bar: the panel and the fixed brand text are part of the picture; the changing text is drawn live
     {
         auto r = rInfo.toFloat();
         ui::paintPanel (g, r, A.dark, 20, {}, 0, false);
         g.setColour (Colour (0xff050403)); g.fillRoundedRectangle (r.reduced (6, 4), 3);
         auto in = r.reduced (14, 4);
         ui::engraved (g, "RIDDIM LAB  |  ECLECTIC PRODZ", in.removeFromLeft (230), ui::font (12.5f, 2, 0.12f), ui::col::brass, Justification::centredLeft);
-        auto right = in.removeFromRight (300);
-        ui::engraved (g, pageTitle (page) + "   LATENCY " + String (proc.getLatencySamples()) + " smp", right, ui::font (12.5f, 2, 0.1f), ui::col::creamDim, Justification::centredRight);
-        ui::engraved (g, infoText.isEmpty() ? String ("Hover a control to see what it does.  Double-click a knob to reset it.") : infoText, in, ui::font (14.0f, 1, 0.03f),
-                      infoText.isEmpty() ? ui::col::creamDim : ui::col::amber, Justification::centredLeft);
     }
+}
+
+void MainUI::paintInfoLive (Graphics& g)
+{
+    auto r = rInfo.toFloat();
+    auto in = r.reduced (14, 4);
+    in.removeFromLeft (230);
+    // clear the part that changes (the picture underneath already has the dark inset)
+    g.setColour (Colour (0xff050403));
+    g.fillRect (in.getX(), r.getY() + 4.0f, r.getRight() - 9.0f - in.getX(), r.getHeight() - 8.0f);
+    auto right = in.removeFromRight (300);
+    String rt = pageTitle (page) + "   LATENCY " + String (proc.getLatencySamples()) + " smp";
+    if (showPerf) rt = String (perfFps, 0) + " FPS  WORST " + String (perfWorstShown, 0) + " MS   " + rt;
+    ui::engraved (g, rt, right.withLeft (right.getX() - (showPerf ? 150.0f : 0.0f)), ui::font (12.5f, 2, 0.1f), ui::col::creamDim, Justification::centredRight);
+    if (showPerf) in.removeFromRight (150.0f);
+    ui::engraved (g, infoText.isEmpty() ? String ("Hover a control to see what it does.  Double-click a knob to reset it.") : infoText, in, ui::font (14.0f, 1, 0.03f),
+                  infoText.isEmpty() ? ui::col::creamDim : ui::col::amber, Justification::centredLeft);
+}
+
+void MainUI::ensureBg (float ps)
+{
+    const int key = bgKeyNow();
+    if (! bgDirty && bgCache.isValid() && std::abs (ps - bgScale) < 0.01f && key == bgKey) return;
+    const int pw = jmax (1, roundToInt (kW * ps)), ph = jmax (1, roundToInt (kH * ps));
+    const auto scaleTo = [] (const Image& im) { return AffineTransform::scale ((float) im.getWidth() / (float) kW, (float) im.getHeight() / (float) kH); };
+    if (! chromeCache.isValid() || chromeCache.getWidth() != pw || chromeCache.getHeight() != ph)
+    {
+        chromeCache = Image (Image::RGB, pw, ph, false);
+        Graphics cg (chromeCache);
+        cg.addTransform (scaleTo (chromeCache));
+        paintChrome (cg);
+    }
+    if (! bgCache.isValid() || bgCache.getWidth() != pw || bgCache.getHeight() != ph) bgCache = Image (Image::RGB, pw, ph, false);
+    bgScale = ps; bgKey = key; bgDirty = false;
+    Graphics ig (bgCache);
+    {
+        Graphics::ScopedSaveState ss (ig);
+        ig.setImageResamplingQuality (Graphics::lowResamplingQuality);
+        ig.drawImageAt (chromeCache, 0, 0);          // 1:1 copy in device pixels
+    }
+    ig.addTransform (scaleTo (bgCache));
+    paintPage (ig);
+}
+
+void MainUI::paint (Graphics& g)
+{
+    const float ps = ui::pixelScaleOf (g);
+    lastPs = ps;
+    ensureBg (ps);
+    {
+        // copy the finished picture 1:1 onto the screen
+        Graphics::ScopedSaveState ss (g);
+        g.addTransform (AffineTransform::scale ((float) kW / (float) bgCache.getWidth(), (float) kH / (float) bgCache.getHeight()));
+        g.setImageResamplingQuality (Graphics::lowResamplingQuality);
+        g.setOpacity (1.0f);
+        g.drawImageAt (bgCache, 0, 0);
+    }
+    if (g.getClipBounds().intersects (rInfo)) paintInfoLive (g);
 }
 
 //------------------------------------------------------------------ Piano Bang voicings (EQ + tape + source in one click)
@@ -1449,25 +1531,56 @@ bool MainUI::pianoVoicingMatches (int which) const
 }
 
 //------------------------------------------------------------------ meters / animation
-void MainUI::timerCallback()
+void MainUI::timerCallback() { onFrame (true); }
+
+void MainUI::onFrame (bool fromTimer)
+{
+    const double now = Time::getMillisecondCounterHiRes();
+    const double since = now - lastFrameMs;
+    if (fromTimer ? since < 70.0 : since < 12.5) return;     // timer only steps in if refresh callbacks stopped; displays faster than 60 Hz are capped at about 60
+    lastFrameMs = now;
+    if (! fromTimer && since < 250.0)
+    {
+        ++perfFrames; perfWorst = jmax (perfWorst, since);
+        if (now - perfStart >= 1000.0)
+        {
+            perfFps = (float) (perfFrames * 1000.0 / (now - perfStart)); perfWorstShown = (float) perfWorst;
+            perfFrames = 0; perfWorst = 0.0; perfStart = now;
+            if (showPerf) repaint (rInfo);
+        }
+    }
+    frameTick (jlimit (0.001f, 0.1f, (float) since * 0.001f));
+}
+
+void MainUI::frameTick (float dt)
 {
     auto vu = [] (float peak) { return jlimit (0.0f, 1.04f, ui::vuPos (20.0f * std::log10 (jmax (peak, 1.0e-5f)) + 12.0f)); };
-    auto glide = [] (float& n, float t) { n += (t - n) * (t > n ? 0.35f : 0.10f); return n; };
+    // meter needles glide the same way at any frame rate (the old constants were tuned for 30 frames a second)
+    auto glide = [dt] (float& n, float t) { const float k = t > n ? 0.35f : 0.10f; n += (t - n) * (1.0f - std::pow (1.0f - k, dt * 30.0f)); return n; };
     auto dbOf = [] (float p) { return 20.0f * std::log10 (jmax (p, 1.0e-5f)); };
     const float oL = proc.getOutputPeak (0), oR = proc.getOutputPeak (1);
     const float inP = jmax (proc.getInputPeak (0), proc.getInputPeak (1));
     meterL.setPosition (glide (needle[0], vu (oL)));
     meterR.setPosition (glide (needle[1], vu (oR)));
-    ladder.setLevels (oL, oR);
-    roomFx.tick (jlimit (0.0f, 1.0f, jmax (oL, oR)));
+    ladder.setLevels (oL, oR, dt);
+    if (fade.running()) fade.step (dt);
+    if (animMode != 2)
+    {
+        // while a knob is being dragged the picture is redrawn less often so the drag stays smooth
+        const bool dragging = ModifierKeys::currentModifiers.isAnyMouseButtonDown();
+        const int every = animMode == 1 ? 4 : (dragging ? 3 : 1);
+        roomFx.tick (jlimit (0.0f, 1.0f, jmax (oL, oR)), dt, (++animCount % every) == 0);
+    }
     if (page == PHome)
     {
         meterIn.setPosition (glide (needle[2], vu (inP)));
         const float gr = proc.getCompGainReductionDb() + proc.getLimiterGainReductionDb();
-        needle[3] += (ui::grPos (gr) - needle[3]) * (ui::grPos (gr) > needle[3] ? 0.35f : 0.12f);
+        needle[3] += (ui::grPos (gr) - needle[3]) * (1.0f - std::pow (1.0f - (ui::grPos (gr) > needle[3] ? 0.35f : 0.12f), dt * 30.0f));
         meterGr.setPosition (needle[3]);
         ledIn.setDb (dbOf (inP)); ledOut.setDb (dbOf (jmax (oL, oR))); ledGr.setDb (proc.getLimiterGainReductionDb());
     }
+    if (++slowCount < 6) return;       // the rest only follows host automation and presets, so ten checks a second are plenty
+    slowCount = 0;
     if (page == PBass)
     {
         ledSub.setDb (dbOf (proc.getSubLevel()) + 6.0f);
@@ -1483,7 +1596,7 @@ void MainUI::timerCallback()
     if (page == PDrums)
     {
         const int key = proc.getSidechainState() * 10 + juce::roundToInt (proc.parameters.getRawParameterValue (rp::id (rp::Drums, P::LockOn))->load());
-        if (key != lastScKey) { lastScKey = key; for (auto& m : mods) if (m.k == MK::Lock) repaint (m.r); }
+        if (key != lastScKey) { lastScKey = key; bgDirty = true; for (auto& m : mods) if (m.k == MK::Lock) repaint (m.r); }
         const int t = juce::roundToInt (proc.parameters.getRawParameterValue (rp::id (rp::Drums, P::DrumType))->load());
         for (int i = 0; i < 6; ++i) drumB[i].setToggleState (t == i, dontSendNotification);
     }
@@ -1491,6 +1604,10 @@ void MainUI::timerCallback()
 }
 
 //------------------------------------------------------------------ presets
+static File animFile() { return File::getSpecialLocation (File::userApplicationDataDirectory).getChildFile ("Eclectic Prodz").getChildFile ("Riddim Lab").getChildFile ("animation.txt"); }
+int MainUI::loadAnimMode() { auto f = animFile(); return f.existsAsFile() ? jlimit (0, 2, f.loadFileAsString().trim().getIntValue()) : 0; }
+void MainUI::saveAnimMode (int m) { auto f = animFile(); f.getParentDirectory().createDirectory(); f.replaceWithText (String (m)); }
+
 File MainUI::presetFolder()
 {
     return File::getSpecialLocation (File::userApplicationDataDirectory).getChildFile ("Eclectic Prodz").getChildFile ("Riddim Lab").getChildFile ("Presets");
@@ -1653,6 +1770,12 @@ void MainUI::showSettingsMenu()
     m.addSeparator();
     m.addItem (3, "Reset this tab to its starting settings", isInstrumentPage (page));
     m.addItem (4, "Show my presets folder");
+    m.addSeparator();
+    m.addSectionHeader ("ANIMATION");
+    m.addItem (10, "Full  (smoothest)", true, animMode == 0);
+    m.addItem (11, "Reduced  (lighter on slower computers)", true, animMode == 1);
+    m.addItem (12, "Off  (still pictures, no page fade)", true, animMode == 2);
+    m.addItem (13, "Show frame timer in the bottom bar", true, showPerf);
     m.showMenuAsync (PopupMenu::Options().withTargetComponent (&cog), [this, safe = SafePointer<MainUI> (this)] (int r)
     {
         if (safe == nullptr || r <= 0) return;
@@ -1665,6 +1788,8 @@ void MainUI::showSettingsMenu()
             setCurrentPreset ({}, -1, {});
         }
         else if (r == 4) { auto d = presetFolder(); d.createDirectory(); d.revealToUser(); }
+        else if (r >= 10 && r <= 12) { animMode = r - 10; saveAnimMode (animMode); roomFx.setActive (animMode != 2); }
+        else if (r == 13) { showPerf = ! showPerf; repaint (rInfo); }
     });
 }
 

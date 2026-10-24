@@ -6,6 +6,37 @@
 
 // The whole interface lives in MainUI at a fixed 1280 x 900 layout; the editor
 // wraps it and scales it to whatever window size the host gives us.
+// Short dissolve from the previous page to the new one. It shows a picture of how the old page looked and
+// fades it out over the new, already live, page. It never takes mouse clicks, so nothing waits for it.
+class FadeOverlay : public juce::Component
+{
+public:
+    FadeOverlay() { setInterceptsMouseClicks (false, false); setOpaque (false); setVisible (false); }
+    void start (juce::Image snapshot, juce::Rectangle<int> area, float seconds)
+    {
+        snap = std::move (snapshot); dur = seconds; t = 0.0f;
+        setBounds (area); setVisible (true); toFront (false); repaint();
+    }
+    bool running() const noexcept { return isVisible() && snap.isValid(); }
+    void step (float dt)
+    {
+        if (! running()) return;
+        t += dt / dur;
+        if (t >= 1.0f) { snap = {}; setVisible (false); return; }
+        repaint();
+    }
+    void paint (juce::Graphics& g) override
+    {
+        if (! snap.isValid()) return;
+        const float a = 0.5f + 0.5f * std::cos (juce::MathConstants<float>::pi * juce::jlimit (0.0f, 1.0f, t));    // eases in and out
+        g.setOpacity (a);
+        g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
+        g.drawImage (snap, getLocalBounds().toFloat());
+    }
+private:
+    juce::Image snap; float t = 0.0f, dur = 0.4f;
+};
+
 class MainUI : public juce::Component, private juce::Timer
 {
 public:
@@ -17,7 +48,33 @@ public:
     void resized() override;
 
     // pages: instrument tabs map onto the engine's profile sections, the rest are views
+    // timing hook for the test harness: cost of MainUI's own drawing for a clip region
+    double benchOwnPaint (juce::Rectangle<int> clip, float ps, int n)
+    {
+        juce::Image img (juce::Image::ARGB, juce::roundToInt (kW * ps), juce::roundToInt (kH * ps), true);
+        paintForBench (img, clip, ps, 1);
+        const double t0 = juce::Time::getMillisecondCounterHiRes();
+        paintForBench (img, clip, ps, n);
+        return (juce::Time::getMillisecondCounterHiRes() - t0) / n;
+    }
+    double benchRenderBg (float ps)
+    {
+        bgDirty = true;
+        const double t0 = juce::Time::getMillisecondCounterHiRes();
+        ensureBg (ps);
+        return juce::Time::getMillisecondCounterHiRes() - t0;
+    }
+    void paintForBench (juce::Image& img, juce::Rectangle<int> clip, float ps, int n)
+    {
+        for (int i = 0; i < n; ++i) { juce::Graphics g (img); g.addTransform (juce::AffineTransform::scale (ps)); g.reduceClipRegion (clip); paint (g); }
+    }
     void lightLighter() { roomFx.toggleLighter(); }
+    // for the test harness: animation mode 0 full, 1 reduced, 2 off; forces the page fade even when the window is not on screen
+    void setAnimationMode (int m) { animMode = juce::jlimit (0, 2, m); roomFx.setActive (animMode != 2); }
+    void forceFadeForTest (bool on) { fadeForTest = on; }
+    bool isFading() const noexcept { return fade.running(); }
+    void advanceFrameForTest (float dt) { frameTick (dt); }
+    juce::Image backgroundForTest() { ensureBg (lastPs); return bgCache; }
     void showPage (int p) { selectPage ((Page) juce::jlimit (0, (int) NumPages - 1, p), gMode, false); }
     enum Page { PHome, PMaster, PDrums, PGuitar, PBass, PKeys, PHorns, PControl, PFx, PTape, PSpring, PPlate, PEcho, NumPages };
 
@@ -80,6 +137,27 @@ private:
     static juce::File presetFolder();
 
     void timerCallback() override;
+    void onFrame (bool fromTimer);
+    void frameTick (float dt);
+
+    // painting: the fixed part of the page (frame, room picture, panels, labels) is drawn once into a picture
+    // and copied on every repaint; only the changing parts (knobs, meters, animation, hover text) are redrawn
+    void paintChrome (juce::Graphics&);
+    void paintPage (juce::Graphics&);
+    void paintInfoLive (juce::Graphics&);
+    void ensureBg (float ps);
+    void beginFade();
+    int bgKeyNow() const { return ((int) page * 16 + sec) * 8 + gMode + 4096 * (int) mods.size(); }
+    juce::Image bgCache, chromeCache; float bgScale = 0.0f, lastPs = 1.0f; bool bgDirty = true; int bgKey = -1;
+    FadeOverlay fade;
+    bool ready = false, fadeForTest = false, showPerf = false;
+    int animMode = 0;           // 0 full, 1 reduced, 2 off
+    int animCount = 0, slowCount = 5;
+    double lastFrameMs = 0.0, perfStart = 0.0, perfWorst = 0.0; int perfFrames = 0; float perfFps = 0.0f, perfWorstShown = 0.0f;
+    std::unique_ptr<juce::VBlankAttachment> vblank;
+    static int loadAnimMode();
+    static void saveAnimMode (int);
+
 
     RiddimLabAudioProcessor& proc;
     ui::LookAndFeel look;
@@ -140,6 +218,12 @@ public:
     void resized() override;
     void showPage (int p) { main.showPage (p); }
     void lightLighter() { main.lightLighter(); }
+    void setAnimationMode (int m) { main.setAnimationMode (m); }
+    void forceFadeForTest (bool b) { main.forceFadeForTest (b); }
+    bool isFading() const { return main.isFading(); }
+    void advanceFrameForTest (float dt) { main.advanceFrameForTest (dt); }
+    double benchOwnPaint (juce::Rectangle<int> c, float ps, int n) { return main.benchOwnPaint (c, ps, n); }
+    double benchRenderBg (float ps) { return main.benchRenderBg (ps); }
 private:
     MainUI main;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RiddimLabAudioProcessorEditor)

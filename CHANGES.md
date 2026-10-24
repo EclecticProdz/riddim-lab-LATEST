@@ -1,3 +1,14 @@
+# v3.0 - Speed and page fade
+
+- **Smoother dragging and animation.** The interface used to redraw the whole picture underneath (frame, room photograph, panel shadows, textures) every time anything moved: a knob, a lamp glow or a musician. The fixed part of each page is now drawn once and copied, and only the parts that move are redrawn. In my timing tests the screen work behind one animation frame or knob move dropped by about 20 to 100 times, and a whole-page redraw from about 300 ms to about 40 ms (software timings on a cloud machine at retina scale; your Mac will differ).
+- Knob, meter, tape-deck and musician pictures are resized once to the exact pixel size they are drawn at, instead of being resized on every repaint.
+- Panel drop shadows no longer use a blur pass (that was the slowest part of drawing a page). They look the same at normal viewing size.
+- **60 frames a second.** Animation and meters now run on the display refresh instead of 30 Hz. Needle and LED motion keeps the same feel at any frame rate.
+- While a knob is being dragged the room animation redraws less often, so the drag gets the processor time.
+- **Page fade.** Changing tab dissolves from the old page to the new one over 0.4 seconds. It never blocks clicks and it does not touch the sound.
+- **Settings (cog) menu, new Animation section:** Full, Reduced (lighter on slower computers), Off (still pictures, no fade), and a frame timer in the bottom bar that shows frames per second and the longest gap between frames, so you can tell me real numbers.
+- No sound or parameter changes in this version.
+
 # v2.9 - Step 8: Moving figures
 
 - Each room now has its musician, cut out from the figure sheet: drummer (Drums), bassist (Bass), guitarist (Guitar), pianist (Piano Bang), sax player (Horns), engineer at the desk (Master and Control).

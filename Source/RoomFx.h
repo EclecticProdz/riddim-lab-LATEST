@@ -29,8 +29,13 @@ public:
 
     void resized() override { place(); }
 
+    // false = animation switched off: the picture stays still and the lighter cannot be lit
+    void setActive (bool on) { if (on != active) { active = on; if (! on) { lighter = 0.0f; puffs.clear(); } repaint(); } }
+    bool isActive() const noexcept { return active; }
+
     bool hitTest (int x, int y) override
     {
+        if (! active) return false;
         for (auto& f : figs)
             if (f.click && f.box.reduced (f.box.getWidth() / 5, f.box.getHeight() / 8).contains (x, y)) return true;
         return false;
@@ -40,25 +45,27 @@ public:
     bool isLit() const noexcept { return lighter > 0.0f; }
     void toggleLighter()
     {
-        if (page != 0) return;
+        if (page != 0 || ! active) return;
         if (lighter > 0.0f) { lighter = 0.0f; repaint(); return; }
         lighter = 14.0f; spawnClock = 0.0f;
     }
 
-    // called by the owner at about 30 Hz; level is the recent output peak (0..1)
-    void tick (float level)
+    // Called by the owner on every display frame. `dt` is the real time since the last call (seconds) and
+    // level is the recent output peak (0..1). `draw` says whether this frame should also redraw the picture:
+    // the owner passes false on some frames while a knob is being dragged or the setting is "Reduced", so the
+    // movement keeps its timing but the screen is touched less often.
+    void tick (float level, float dt, bool draw)
     {
-        const float dt = 1.0f / 30.0f;
-        time += dt; ++frame;
-        beat += (level - beat) * (level > beat ? 0.5f : 0.12f);
+        dt = juce::jlimit (0.001f, 0.1f, dt);
+        time += dt;
+        const float k = 1.0f - std::pow (level > beat ? 0.5f : 0.88f, dt * 30.0f);      // same feel at any frame rate
+        beat += (level - beat) * k;
         if (lighter > 0.0f)
         {
             lighter -= dt; spawnClock -= dt;
             if (spawnClock <= 0.0f && lighter > 0.0f) { spawnClock = 0.07f; spawn(); }
         }
-        if ((frame & 1) == 0) for (auto& l : lights) repaint (l.box);
-        // the musicians move every frame while there is signal, a little slower when idle
-        if (beat > 0.01f || (frame % 3) == 0) for (auto& f : figs) repaint (f.box);
+        // smoke always moves; it is only redrawn when asked to
         juce::Rectangle<int> dirty;
         for (auto it = puffs.begin(); it != puffs.end();)
         {
@@ -71,7 +78,14 @@ public:
             dirty = dirty.getUnion (puffBox (*it));
             ++it;
         }
-        if (! dirty.isEmpty()) repaint (dirty.expanded (4));
+        pendingDirty = pendingDirty.getUnion (dirty);
+        if (! draw) { lighterWasOn = lighterWasOn || lighter > 0.0f; return; }
+
+        ++frame;
+        if ((frame & 1) == 0) for (auto& l : lights) repaint (l.box);                   // lamps flicker slowly: half rate is enough
+        // the musicians move every frame while there is signal, at half rate when it is quiet
+        if (beat > 0.01f || (frame & 1) == 0) for (auto& f : figs) repaint (f.box);
+        if (! pendingDirty.isEmpty()) { repaint (pendingDirty.expanded (4)); pendingDirty = {}; }
         if (lighter > 0.0f || lighterWasOn) repaint (flameBox());
         lighterWasOn = lighter > 0.0f;
     }
@@ -114,6 +128,9 @@ private:
     juce::Image fig[8];
     int gridW = 96, gridH = 28, frame = 0, page = -1;
     float time = 0.0f, beat = 0.0f, lighter = 0.0f, spawnClock = 0.0f; bool lighterWasOn = false;
+    bool active = true;
+    juce::Rectangle<int> pendingDirty;
+    juce::Image scaledFig[8]; int scaledFigH[8] {};
     juce::Random rng;
 
     void findLights (const juce::Image& img)
@@ -164,8 +181,17 @@ private:
         using namespace juce;
         int idx = f.img;
         if (idx == 6 && lighter > 0.0f) idx = 7;
-        const auto& im = fig[idx];
-        if (! im.isValid()) return;
+        const auto& src = fig[idx];
+        if (! src.isValid()) return;
+        // the picture is resized once to the exact pixel height it is drawn at (screen scale included)
+        const float ps = jmax (0.25f, g.getInternalContext().getPhysicalPixelScaleFactor());
+        const int wantH = jmax (8, roundToInt (f.h * ps));
+        if (scaledFigH[idx] != wantH || ! scaledFig[idx].isValid())
+        {
+            scaledFig[idx] = src.rescaled (jmax (4, roundToInt (src.getWidth() * (double) wantH / src.getHeight())), wantH, Graphics::highResamplingQuality);
+            scaledFigH[idx] = wantH;
+        }
+        const auto& im = scaledFig[idx];
         const float s = f.h / (float) im.getHeight();
         const float ang = f.sway * 0.0174533f * std::sin (time * 6.2832f * 0.55f * f.speed + f.phase) + 0.012f * beat * std::sin (time * 9.0f + f.phase);
         const float bob = f.bob * beat * (0.6f + 0.4f * std::sin (time * 11.0f * f.speed));
@@ -176,6 +202,7 @@ private:
         const float ax = (float) im.getWidth() * 0.5f, ay = (float) im.getHeight();
         auto tf = AffineTransform::translation (-ax, -ay).scaled (1.0f, sy).rotated (ang).scaled (s, s).translated (f.cx, f.footY - bob);
         g.setOpacity (1.0f);
+        g.setImageResamplingQuality (Graphics::mediumResamplingQuality);
         g.drawImageTransformed (im, tf, false);
     }
 

@@ -2,6 +2,8 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "BinaryData.h"
+#include <map>
+#include <array>
 
 // =============================================================================
 //  Riddim Lab UI toolkit: artwork loader, look-and-feel and the custom widgets
@@ -24,6 +26,32 @@ namespace col
     inline const Colour brass     { 0xffd9b365 };
     inline const Colour brassDark { 0xff7a5a22 };
     inline const Colour ink       { 0xff0c0b09 };
+}
+
+//------------------------------------------------------------------ pre-sized pictures
+// Big artwork is resized once to the exact number of screen pixels it needs (the screen scale of the
+// graphics context it is drawn into) and then copied 1:1. Resizing a large picture on every repaint is
+// what made dragging a knob feel heavy. Message thread only.
+inline float pixelScaleOf (const Graphics& g) { return jmax (0.25f, g.getInternalContext().getPhysicalPixelScaleFactor()); }
+
+inline const Image& pixelSprite (const Image& src, float w, float h, float ps)
+{
+    static std::map<std::array<std::int64_t, 3>, Image> cache;
+    const int pw = jmax (1, roundToInt (w * ps)), ph = jmax (1, roundToInt (h * ps));
+    const std::array<std::int64_t, 3> key { (std::int64_t) (std::intptr_t) src.getPixelData().get(), pw, ph };
+    auto it = cache.find (key);
+    if (it != cache.end()) return it->second;
+    if (cache.size() > 96) cache.clear();
+    return cache.emplace (key, src.rescaled (pw, ph, Graphics::highResamplingQuality)).first->second;
+}
+
+// draw `src` into `dest` using the pre-sized copy
+inline void drawSprite (Graphics& g, const Image& src, Rectangle<float> dest)
+{
+    if (! src.isValid()) return;
+    const auto& sp = pixelSprite (src, dest.getWidth(), dest.getHeight(), pixelScaleOf (g));
+    g.setImageResamplingQuality (Graphics::mediumResamplingQuality);
+    g.drawImage (sp, dest);
 }
 
 //------------------------------------------------------------------ meter scale (must match Tools/gen_assets.py)
@@ -105,12 +133,30 @@ inline void drawScrew (Graphics& g, Point<float> c, float size, int seed, bool s
     g.drawImage (im, Rectangle<float> (size, size).withCentre (c));
 }
 
+//------------------------------------------------------------------ cheap soft shadow
+// A blurred drop shadow made of thin rings that fade outwards. It looks like DropShadow but needs no blur pass,
+// which was by far the slowest part of drawing a page (each panel took about 18 ms on a retina screen).
+inline void softShadow (Graphics& g, Rectangle<float> r, float corner, float radius, Point<float> off, float alpha)
+{
+    const float step = 0.5f;
+    const auto base = r.translated (off.x, off.y);
+    const float dmin = jmax (std::abs (off.x), std::abs (off.y)) + 1.0f;     // rings only need to reach the part not hidden by the panel
+    for (float d = radius; d >= -dmin; d -= step)
+    {
+        const float u = jlimit (0.0f, 1.0f, (radius - d) / (2.0f * radius));
+        const float a = alpha * 0.5f * (1.0f - std::cos (MathConstants<float>::pi * u));
+        if (a < 0.004f) continue;
+        g.setColour (Colours::black.withAlpha (a));
+        g.drawRoundedRectangle (base.expanded (d), jmax (0.0f, corner + d), step + 0.15f);
+    }
+}
+
 // A riveted, textured metal panel with bevel, optional title strip and corner screws.
 inline void paintPanel (Graphics& g, Rectangle<float> r, const Image& tex, int seed, const String& title = {}, float stripH = 0.0f,
                         bool screws = true, float titleInset = 22.0f)
 {
     Path p; p.addRoundedRectangle (r, 6.0f);
-    DropShadow (Colours::black.withAlpha (0.65f), 7, { 0, 3 }).drawForPath (g, p);
+    softShadow (g, r, 6.0f, 7.0f, { 0, 3 }, 0.65f);
     g.saveState();
     g.reduceClipRegion (Rectangle<int> ((int) r.getX() - 1, (int) r.getY() - 1, (int) r.getWidth() + 2, (int) r.getHeight() + 2));
     g.setTiledImageFill (tex, (int) (r.getX() * 3.7f) + seed * 97, (int) (r.getY() * 5.3f) + seed * 61, 1.0f);
@@ -223,8 +269,7 @@ public:
         int idx = 3; const float sizes[4] { 80, 68, 58, 46 };
         float best = 1e9f; for (int i = 0; i < 4; ++i) if (std::abs (sizes[i] - d) < best) { best = std::abs (sizes[i] - d); idx = i; }
         const float side = d * 1.316f;
-        g.setImageResamplingQuality (Graphics::highResamplingQuality);
-        g.drawImage (A.knob[idx], Rectangle<float> (side, side).withCentre (c));
+        drawSprite (g, A.knob[idx], Rectangle<float> (side, side).withCentre (c));
         // pointer: cream line on the black skirt + engraved line on the brass cap
         g.setColour (Colour (0xfff3e8c6)); g.drawLine ({ polar (angle, R * 0.80f), polar (angle, R * 0.95f) }, jmax (1.8f, R * 0.075f));
         g.setColour (Colours::black.withAlpha (0.28f)); g.drawLine ({ polar (angle, R * 0.20f).translated (0.8f, 1.0f), polar (angle, R * 0.64f).translated (0.8f, 1.0f) }, 2.2f);
@@ -582,8 +627,7 @@ public:
     {
         auto& A = Assets::get();
         auto b = getLocalBounds().toFloat();
-        g.setImageResamplingQuality (Graphics::highResamplingQuality);
-        g.drawImage (A.face[isHead ? 1 : 0][isGr ? 1 : 0], b);
+        drawSprite (g, A.face[isHead ? 1 : 0][isGr ? 1 : 0], b);
         // needle
         const float W = b.getWidth(), H = b.getHeight(), m = 6.0f;
         const Point<float> pv (W * 0.5f, H * 1.06f);
@@ -596,7 +640,7 @@ public:
         g.setColour (Colour (0xff8f1d14)); g.drawLine ({ pv, tip }, 1.7f);
         g.setColour (Colour (0xffd8503a).withAlpha (0.7f)); g.drawLine ({ pv.translated (-0.5f, 0), tip.translated (-0.5f, 0) }, 0.6f);
         g.restoreState();
-        g.drawImage (A.glass[isHead ? 1 : 0], b);
+        drawSprite (g, A.glass[isHead ? 1 : 0], b);
     }
 private:
     bool isHead, isGr; float pos = 0.0f;
@@ -606,7 +650,7 @@ private:
 class LedLadder : public Component
 {
 public:
-    void setLevels (float l, float r)
+    void setLevels (float l, float r, float dt = 1.0f / 30.0f)
     {
         const float db[2] { 20.0f * std::log10 (jmax (l, 1.0e-5f)), 20.0f * std::log10 (jmax (r, 1.0e-5f)) };
         bool changed = false;
@@ -614,7 +658,7 @@ public:
         {
             if (std::abs (db[c] - level[c]) > 0.2f) { level[c] = db[c]; changed = true; }
             if (db[c] >= hold[c]) { hold[c] = db[c]; holdAge[c] = 0; changed = true; }
-            else if (++holdAge[c] > 25) { hold[c] -= 1.2f; changed = true; }
+            else if ((holdAge[c] += dt * 30.0f) > 25.0f) { hold[c] -= 1.2f * dt * 30.0f; changed = true; }
         }
         if (changed) repaint();
     }
@@ -639,7 +683,7 @@ public:
             }
     }
 private:
-    float level[2] { -99, -99 }, hold[2] { -99, -99 }; int holdAge[2] { 0, 0 };
+    float level[2] { -99, -99 }, hold[2] { -99, -99 }; float holdAge[2] { 0, 0 };
 };
 
 //------------------------------------------------------------------ tape deck with turning reels
@@ -657,15 +701,16 @@ public:
     {
         auto& A = Assets::get();
         auto b = getLocalBounds().toFloat();
-        g.setImageResamplingQuality (Graphics::highResamplingQuality);
-        g.drawImage (A.deck, b);
+        drawSprite (g, A.deck, b);
         const float sx = b.getWidth() / 330.0f, sy = b.getHeight() / 96.0f;
         auto reel = [&] (float cx, float cy, float diameter, float ang)
         {
             const float sz = diameter * sx;
-            auto t = AffineTransform::scale (sz / (float) A.reel.getWidth()).rotated (ang, sz * 0.5f, sz * 0.5f).translated (cx * sx - sz * 0.5f, cy * sy - sz * 0.5f);
+            const auto& rs = pixelSprite (A.reel, sz, sz, pixelScaleOf (g));
+            auto t = AffineTransform::scale (sz / (float) rs.getWidth()).rotated (ang, sz * 0.5f, sz * 0.5f).translated (cx * sx - sz * 0.5f, cy * sy - sz * 0.5f);
             g.setColour (Colours::black.withAlpha (0.45f)); g.fillEllipse (cx * sx - sz * 0.45f + 1.5f, cy * sy - sz * 0.45f + 2.5f, sz * 0.9f, sz * 0.9f);
-            g.drawImageTransformed (A.reel, t);
+            g.setImageResamplingQuality (Graphics::mediumResamplingQuality);
+            g.drawImageTransformed (rs, t);
         };
         reel (60.0f, 48.0f, 85.0f, angle);
         reel (270.0f, 48.0f, 69.0f, -angle * 1.22f);
@@ -775,7 +820,7 @@ inline void paintModule (Graphics& g, Rectangle<float> r, Mat m, const String& t
 {
     auto& A = Assets::get();
     Path p; p.addRoundedRectangle (r, 5.0f);
-    DropShadow (Colours::black.withAlpha (0.72f), 10, { 0, 5 }).drawForPath (g, p);
+    softShadow (g, r, 5.0f, 10.0f, { 0, 5 }, 0.72f);
     g.saveState();
     g.reduceClipRegion (p);
     const int ox = (int) (r.getX() * 3.7f) + seed * 97, oy = (int) (r.getY() * 5.3f) + seed * 61;
