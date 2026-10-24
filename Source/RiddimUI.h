@@ -38,7 +38,8 @@ struct Assets
     Image knob[4], screwBrass[4], screwSteel[4];
     Image face[2][2];            // [big/head][vu/gr]
     Image glass[2];              // [big/head]
-    Image thumbs[9];
+    Image fig[8];                       // musicians: drummer, bass, guitar, piano, sax, engineer, seated, seated with lighter
+    Image room[8], fxRoom, hero[4];     // room pictures: home, drums, guitar, bass, piano, horns, master, control
     Typeface::Ptr barlow[3], bebas;
 
     static Assets& get() { static Assets a; return a; }
@@ -63,9 +64,15 @@ private:
         face[0][0] = img (meter_vu_big_face_png, meter_vu_big_face_pngSize);   face[0][1] = img (meter_gr_big_face_png, meter_gr_big_face_pngSize);
         face[1][0] = img (meter_vu_head_face_png, meter_vu_head_face_pngSize); face[1][1] = img (meter_gr_head_face_png, meter_gr_head_face_pngSize);
         glass[0] = img (meter_big_glass_png, meter_big_glass_pngSize);         glass[1] = img (meter_head_glass_png, meter_head_glass_pngSize);
-        const char* td[9] { thumb1_png, thumb2_png, thumb3_png, thumb4_png, thumb5_png, thumb6_png, thumb7_png, thumb8_png, thumb9_png };
-        const int ts[9] { thumb1_pngSize, thumb2_pngSize, thumb3_pngSize, thumb4_pngSize, thumb5_pngSize, thumb6_pngSize, thumb7_pngSize, thumb8_pngSize, thumb9_pngSize };
-        for (int i = 0; i < 9; ++i) thumbs[i] = img (td[i], ts[i]);
+        const char* rd[8] { room_home_jpg, room_drums_jpg, room_guitar_jpg, room_bass_jpg, room_piano_jpg, room_horns_jpg, room_master_jpg, room_control_jpg };
+        const int rs[8] { room_home_jpgSize, room_drums_jpgSize, room_guitar_jpgSize, room_bass_jpgSize, room_piano_jpgSize, room_horns_jpgSize, room_master_jpgSize, room_control_jpgSize };
+        for (int i = 0; i < 8; ++i) room[i] = img (rd[i], rs[i]);
+        fig[0] = img (fig_drummer_png, fig_drummer_pngSize); fig[1] = img (fig_bass_png, fig_bass_pngSize); fig[2] = img (fig_guitar_png, fig_guitar_pngSize);
+        fig[3] = img (fig_piano_png, fig_piano_pngSize); fig[4] = img (fig_sax_png, fig_sax_pngSize); fig[5] = img (fig_engineer_png, fig_engineer_pngSize);
+        fig[6] = img (fig_seated_png, fig_seated_pngSize); fig[7] = img (fig_seatedlit_png, fig_seatedlit_pngSize);
+        fxRoom = img (room_effects_jpg, room_effects_jpgSize);
+        hero[0] = img (hero_tape_jpg, hero_tape_jpgSize);     hero[1] = img (hero_spring_jpg, hero_spring_jpgSize);
+        hero[2] = img (hero_plate_jpg, hero_plate_jpgSize);   hero[3] = img (hero_echo_jpg, hero_echo_jpgSize);
         barlow[0] = face_ (BarlowCondensedRegular_ttf, BarlowCondensedRegular_ttfSize);
         barlow[1] = face_ (BarlowCondensedMedium_ttf, BarlowCondensedMedium_ttfSize);
         barlow[2] = face_ (BarlowCondensedSemiBold_ttf, BarlowCondensedSemiBold_ttfSize);
@@ -205,6 +212,13 @@ public:
             g.setColour (lit ? col::amber : col::brassDark.brighter (0.15f).withAlpha (0.9f));
             g.drawLine ({ p1, p2 }, major ? 1.8f : 1.3f);
         }
+        {   // printed 0 .. 10 scale ends
+            const Colour inkc (s.getProperties().contains ("ink") ? (uint32) (int) s.getProperties()["ink"] : (uint32) col::cream.getARGB());
+            g.setFont (font (9.5f, 2, 0.02f)); g.setColour (inkc.withAlpha (0.85f));
+            auto p0 = polar (a0, R + 11.0f), p1 = polar (a1, R + 11.0f);
+            g.drawText ("0", Rectangle<float> (14, 12).withCentre (p0), Justification::centred, false);
+            g.drawText ("10", Rectangle<float> (18, 12).withCentre (p1), Justification::centred, false);
+        }
         // knob bitmap (diameter d, sprite is 1.316 x d with the drop shadow)
         int idx = 3; const float sizes[4] { 80, 68, 58, 46 };
         float best = 1e9f; for (int i = 0; i < 4; ++i) if (std::abs (sizes[i] - d) < best) { best = std::abs (sizes[i] - d); idx = i; }
@@ -217,6 +231,38 @@ public:
         g.setColour (Colour (0xff2a1a08)); g.drawLine ({ polar (angle, R * 0.20f), polar (angle, R * 0.64f) }, 2.0f);
         g.setColour (Colour (0xffffe9a8).withAlpha (0.55f)); g.drawLine ({ polar (angle, R * 0.20f).translated (-0.9f, -0.9f), polar (angle, R * 0.64f).translated (-0.9f, -0.9f) }, 0.8f);
         if (s.hasKeyboardFocus (false)) { g.setColour (col::amber.withAlpha (0.5f)); g.drawEllipse (c.x - R - 2, c.y - R - 2, d + 4, d + 4, 1.2f); }
+    }
+
+    void drawLinearSlider (Graphics& g, int x, int y, int w, int h, float pos, float, float, Slider::SliderStyle, Slider& s) override
+    {
+        // black ribbed channel fader on a recessed slot with a tick scale
+        const float cx = (float) x + w * 0.5f;
+        const Colour inkc (s.getProperties().contains ("ink") ? (uint32) (int) s.getProperties()["ink"] : (uint32) col::cream.getARGB());
+        auto slot = Rectangle<float> (cx - 3.5f, (float) y + 10.0f, 7.0f, (float) h - 20.0f);
+        g.setColour (Colours::black); g.fillRoundedRectangle (slot.expanded (1.5f), 4.0f);
+        g.setGradientFill (ColourGradient (Colour (0xff050403), slot.getX(), 0, Colour (0xff2a2620), slot.getRight(), 0, false)); g.fillRoundedRectangle (slot, 3.0f);
+        for (int i = 0; i <= 10; ++i)
+        {
+            const float ty = slot.getBottom() - slot.getHeight() * (float) i / 10.0f;
+            const bool major = (i % 5) == 0;
+            g.setColour (inkc.withAlpha (0.75f));
+            g.drawLine (cx - 11.0f - (major ? 4.0f : 0.0f), ty, cx - 8.0f, ty, major ? 1.4f : 1.0f);
+            g.drawLine (cx + 8.0f, ty, cx + 11.0f + (major ? 4.0f : 0.0f), ty, major ? 1.4f : 1.0f);
+        }
+        const float capH = 30.0f, capW = 44.0f;
+        const float cy = jlimit (slot.getY(), slot.getBottom(), pos);
+        auto cap = Rectangle<float> (capW, capH).withCentre ({ cx, cy });
+        DropShadow (Colours::black.withAlpha (0.7f), 6, { 0, 4 }).drawForPath (g, [&] { Path p; p.addRoundedRectangle (cap, 3.0f); return p; }());
+        g.setGradientFill (ColourGradient (Colour (0xff3a3a3d), 0, cap.getY(), Colour (0xff09090a), 0, cap.getBottom(), false)); g.fillRoundedRectangle (cap, 3.0f);
+        for (int i = 0; i < 7; ++i)    // ribs
+        {
+            const float ry = cap.getY() + 4.0f + i * ((capH - 8.0f) / 6.0f);
+            g.setColour (Colours::black.withAlpha (0.85f)); g.drawLine (cap.getX() + 3, ry + 1.0f, cap.getRight() - 3, ry + 1.0f, 1.4f);
+            g.setColour (Colours::white.withAlpha (0.17f)); g.drawLine (cap.getX() + 3, ry, cap.getRight() - 3, ry, 1.0f);
+        }
+        g.setColour (Colour (0xfff3e8c6)); g.fillRect (cap.getX() + 3, cap.getCentreY() - 1.0f, capW - 6.0f, 2.0f);
+        g.setColour (Colours::white.withAlpha (0.25f)); g.drawRoundedRectangle (cap.reduced (0.5f), 3.0f, 1.0f);
+        g.setColour (Colours::black); g.drawRoundedRectangle (cap, 3.0f, 1.0f);
     }
 
     void drawButtonBackground (Graphics& g, Button& b, const Colour&, bool over, bool down) override
@@ -256,6 +302,20 @@ public:
             }
             else { g.setColour (col::brassDark.withAlpha (0.55f)); g.strokePath (p, PathStrokeType (1.0f)); }
         }
+        else if (role == "recess" || role == "name")
+        {
+            // recessed rubber-style button that lights amber when selected
+            Path p; p.addRoundedRectangle (r, 4.0f);
+            g.setGradientFill (ColourGradient (Colour (0xff070605), 0, r.getY(), Colour (0xff1d1a14), 0, r.getBottom(), false)); g.fillPath (p);
+            if (on)
+            {
+                g.setGradientFill (ColourGradient (Colour (0xffffd070), 0, r.getY(), Colour (0xffd8801a), 0, r.getBottom(), false)); g.fillPath (p.createPathWithRoundedCorners (0.0f));
+                g.setGradientFill (ColourGradient (Colours::white.withAlpha (0.35f), 0, r.getY(), Colours::transparentWhite, 0, r.getCentreY(), false)); g.fillPath (p);
+            }
+            else if (over || down) { g.setColour (col::amber.withAlpha (0.10f)); g.fillPath (p); }
+            g.setColour (Colours::black.withAlpha (0.95f)); g.strokePath (p, PathStrokeType (1.4f));
+            g.setColour (Colours::white.withAlpha (on ? 0.0f : 0.07f)); g.drawLine (r.getX() + 4, r.getBottom() - 1.5f, r.getRight() - 4, r.getBottom() - 1.5f);
+        }
         else   // "brass": small plate button
         {
             Path p; p.addRoundedRectangle (r, 3.0f);
@@ -273,6 +333,13 @@ public:
         auto r = b.getLocalBounds().toFloat();
         if (role == "lib") return;       // drawn by the editor (thumbnail + name)
         const bool on = b.getToggleState();
+        if (role == "recess" || role == "name")
+        {
+            g.setFont (font (role == "name" ? 15.0f : 13.5f, 2, 0.10f));
+            g.setColour (on ? Colour (0xff2a1500) : (role == "name" ? col::amber : col::cream));
+            g.drawText (b.getButtonText(), r, Justification::centred, false);
+            return;
+        }
         float h = role == "nav" ? 19.0f : (role == "subnav" ? 13.0f : 13.5f);
         auto f = role == "nav" ? font (h, 3, 0.09f) : font (h, 2, 0.08f);
         g.setFont (f);
@@ -316,7 +383,7 @@ public:
         s.setScrollWheelEnabled (true);
         s.setPopupDisplayEnabled (false, false, nullptr);
         s.addMouseListener (this, false);
-        s.onValueChange = [this] { if (hover) { repaint(); if (onInfo) onInfo (infoString()); } };
+        s.onValueChange = [this] { repaint(); if (hover && onInfo) onInfo (infoString()); };
         addAndMakeVisible (s);
     }
     ~Knob() override { s.removeMouseListener (this); att.reset(); }
@@ -344,6 +411,10 @@ public:
                     s.valueFromTextFunction = [] (const String& t) { return t.getDoubleValue(); }; break;
             case 5: s.textFromValueFunction = [names] (double v) { return names.isEmpty() ? String (v) : names[jlimit (0, names.size() - 1, roundToInt (v))]; };
                     s.valueFromTextFunction = [names] (const String& t) { return (double) jmax (0, names.indexOf (t)); }; break;
+            case 8: s.textFromValueFunction = [] (double v) { return String (v, 1) + " m"; };
+                    s.valueFromTextFunction = [] (const String& t) { return t.getDoubleValue(); }; break;
+            case 9: s.textFromValueFunction = [] (double v) { return String (roundToInt (v)) + String::fromUTF8 (" \xc2\xb0"); };
+                    s.valueFromTextFunction = [] (const String& t) { return t.getDoubleValue(); }; break;
             case 7: s.textFromValueFunction = [] (double v) { return String (v, 2) + " Hz"; };
                     s.valueFromTextFunction = [] (const String& t) { return t.getDoubleValue(); }; break;
             default: break;
@@ -355,21 +426,28 @@ public:
     void setCaption (const String& c) { caption = c; repaint(); }
     void paint (Graphics& g) override
     {
-        auto r = getLocalBounds().toFloat().removeFromBottom (15.0f);
-        const bool showVal = hover || s.isMouseButtonDown();
-        const String t = showVal ? s.getTextFromValue (s.getValue()) : caption;
-        engraved (g, t, r, font (13.5f, 2, 0.06f), showVal ? col::amber : col::cream, Justification::centred, isEnabled() ? 1.0f : 0.6f);
+        auto b = getLocalBounds().toFloat().removeFromBottom (27.0f);
+        const float al = isEnabled() ? 1.0f : 0.6f;
+        const bool dark = lit.getBrightness() < 0.5f;
+        auto cap = b.removeFromTop (14.0f);
+        if (dark) { g.setColour (Colours::white.withAlpha (0.22f * al)); g.setFont (font (13.0f, 2, 0.10f)); g.drawText (caption, cap.translated (0, 1), Justification::centred, false); g.setColour (ink.withMultipliedAlpha (al)); g.drawText (caption, cap, Justification::centred, false); }
+        else engraved (g, caption, cap, font (13.0f, 2, 0.10f), ink, Justification::centred, al);
+        g.setFont (font (12.5f, 2, 0.04f)); g.setColour (lit.withMultipliedAlpha (al));
+        g.drawText (s.getTextFromValue (s.getValue()), b, Justification::centred, false);
     }
-    void resized() override { s.setBounds (getLocalBounds().withTrimmedBottom (13)); }
+    void resized() override { s.setBounds (getLocalBounds().withTrimmedBottom (26)); }
+    void setDiameter (int d) { diam = d; }
+    void setInk (Colour i, Colour l) { ink = i; lit = l; s.getProperties().set ("ink", (int) i.getARGB()); repaint(); }
     void mouseEnter (const MouseEvent&) override { hover = true; repaint(); if (onInfo) onInfo (infoString()); }
     void mouseExit  (const MouseEvent&) override { hover = false; repaint(); if (onInfo && ! s.isMouseButtonDown()) onInfo ({}); }
     int preferredWidth() const { return diam + 16; }
-    int preferredHeight() const { return diam + 16 + 13; }
+    int preferredHeight() const { return diam + 16 + 26; }
 
     String infoString() { return caption + "   " + s.getTextFromValue (s.getValue()) + (help.isNotEmpty() ? "     " + help : String()); }
     Slider s;
     String help;
     std::function<void (const String&)> onInfo;
+    Colour ink = col::cream, lit = col::amber;
 private:
     String caption; int diam; bool hover = false;
     std::unique_ptr<APVTS::SliderAttachment> att;
@@ -393,6 +471,7 @@ public:
     }
     ~ParamWidget() override { att.reset(); }
     bool isBound() const { return param != nullptr; }
+    Colour ink = col::cream, lit = col::amber;     // set by the module the widget sits on
 protected:
     void setValue (float v) { if (att != nullptr) att->setValueAsCompleteGesture (v); }
     RangedAudioParameter* param = nullptr;
@@ -424,14 +503,14 @@ public:
             Font pf = font (13.5f, 2, 0.05f);
             const float tw = pf.getStringWidthFloat (text);
             if (tw > tr.getWidth()) pf = font (13.5f * tr.getWidth() / tw, 2, 0.05f);
-            engraved (g, text, tr, pf, on ? col::amber : col::cream, Justification::centred, a);
+            engraved (g, text, tr, pf, on ? lit : ink, Justification::centred, a);
             return;
         }
         Point<float> c (style == LampLabelLeft ? b.getRight() - rad - 2.0f : rad + 2.0f, b.getCentreY());
         if (style == LampOnly) c = b.getCentre();
         drawLamp (g, c, rad, on);
-        if (style == LampLabelRight) engraved (g, text, b.withTrimmedLeft (rad * 2 + 8.0f), font (13.0f, 2, 0.07f), on ? col::amber : col::cream, Justification::centredLeft, a);
-        else if (style == LampLabelLeft) engraved (g, text, b.withTrimmedRight (rad * 2 + 8.0f), font (13.0f, 2, 0.07f), on ? col::amber : col::cream, Justification::centredRight, a);
+        if (style == LampLabelRight) engraved (g, text, b.withTrimmedLeft (rad * 2 + 8.0f), font (13.0f, 2, 0.07f), on ? lit : ink, Justification::centredLeft, a);
+        else if (style == LampLabelLeft) engraved (g, text, b.withTrimmedRight (rad * 2 + 8.0f), font (13.0f, 2, 0.07f), on ? lit : ink, Justification::centredRight, a);
     }
     void mouseDown (const MouseEvent&) override
     {
@@ -474,7 +553,7 @@ public:
             auto cell = cellBounds (i);
             const bool on = (i == sel);
             drawLamp (g, { cell.getX() + 7.0f, cell.getCentreY() }, 3.6f, on);
-            engraved (g, items[i], cell.withTrimmedLeft (17.0f), font (fs, 2, 0.06f), on ? col::amber : col::cream, Justification::centredLeft, a);
+            engraved (g, items[i], cell.withTrimmedLeft (17.0f), font (fs, 2, 0.06f), on ? lit : ink, Justification::centredLeft, a);
         }
     }
     void mouseDown (const MouseEvent& e) override
@@ -593,6 +672,352 @@ public:
     }
 private:
     float angle = 0.0f, speed = 0.0f;
+};
+
+
+//------------------------------------------------------------------ module faceplates (green / steel / red / brass / wood / dark)
+enum class Mat { Green, Steel, Red, Brass, Wood, Dark };
+inline Colour inkFor (Mat m) { return m == Mat::Brass ? Colour (0xff261808) : col::cream; }
+inline Colour litFor (Mat m) { return m == Mat::Brass ? Colour (0xff6e3406) : col::amber; }
+
+// Brushed-metal texture (steel / red): horizontal streaks plus fine grain, made once.
+inline const Image& metalTexture (Mat m)
+{
+    static Image steel, red, dark;
+    Image& im = m == Mat::Red ? red : (m == Mat::Dark ? dark : steel);
+    if (im.isValid()) return im;
+    const Colour base = m == Mat::Red ? Colour (0xff96221e) : (m == Mat::Dark ? Colour (0xff1e1f21) : Colour (0xff424a56));
+    const int W = 512, H = 400;
+    im = Image (Image::ARGB, W, H, false);
+    Random rnd (m == Mat::Red ? 11 : (m == Mat::Dark ? 5 : 3));
+    std::vector<float> row ((size_t) H), blk ((size_t) (H * (W / 24 + 2)));
+    for (auto& v : row) v = (rnd.nextFloat() - 0.5f) * 0.10f;
+    for (int y = 1; y < H - 1; ++y) row[(size_t) y] = 0.5f * row[(size_t) y] + 0.25f * (row[(size_t) y - 1] + row[(size_t) y + 1]);
+    for (auto& v : blk) v = (rnd.nextFloat() - 0.5f) * 0.07f;
+    Image::BitmapData bd (im, Image::BitmapData::writeOnly);
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+        {
+            const float f = 1.0f + row[(size_t) y] + blk[(size_t) (y * (W / 24 + 2) + x / 24)] + (rnd.nextFloat() - 0.5f) * 0.035f;
+            bd.setPixelColour (x, y, Colour::fromFloatRGBA (jlimit (0.0f, 1.0f, base.getFloatRed() * f), jlimit (0.0f, 1.0f, base.getFloatGreen() * f), jlimit (0.0f, 1.0f, base.getFloatBlue() * f), 1.0f));
+        }
+    return im;
+}
+
+inline void drawIcon (Graphics& g, const String& name, Rectangle<float> r, Colour c)
+{
+    const float cx = r.getCentreX(), cy = r.getCentreY(), s = jmin (r.getWidth(), r.getHeight()) * 0.5f, lw = jmax (1.2f, s * 0.15f);
+    const float tp = MathConstants<float>::twoPi;
+    g.setColour (c);
+    if (name == "reel")
+    {
+        g.drawEllipse (r.withSizeKeepingCentre (s * 1.7f, s * 1.7f), lw);
+        for (int i = 0; i < 3; ++i) { const float a = (float) i * tp / 3.0f - 1.57f; g.drawLine (cx, cy, cx + std::cos (a) * s * 0.8f, cy + std::sin (a) * s * 0.8f, lw); }
+        g.fillEllipse (cx - s * 0.17f, cy - s * 0.17f, s * 0.34f, s * 0.34f);
+    }
+    else if (name == "sliders")
+    {
+        for (int i = 0; i < 3; ++i) { const float x = cx - s * 0.6f + (float) i * s * 0.6f; g.drawLine (x, cy - s * 0.8f, x, cy + s * 0.8f, lw * 0.8f);
+                                      g.fillRoundedRectangle (x - s * 0.22f, cy - s * 0.3f + (float) ((i * 5) % 3 - 1) * s * 0.35f, s * 0.44f, s * 0.26f, 1.5f); }
+    }
+    else if (name == "gauge")
+    {
+        Path p; p.addCentredArc (cx, cy + s * 0.35f, s * 0.95f, s * 0.95f, 0, -2.2f, 2.2f, true); g.strokePath (p, PathStrokeType (lw));
+        g.drawLine (cx, cy + s * 0.35f, cx + s * 0.5f, cy - s * 0.45f, lw);
+    }
+    else if (name == "speaker")
+    {
+        g.drawRoundedRectangle (r.withSizeKeepingCentre (s * 1.3f, s * 1.8f), 2.0f, lw * 0.9f);
+        g.drawEllipse (cx - s * 0.38f, cy - s * 0.1f, s * 0.76f, s * 0.76f, lw * 0.9f); g.fillEllipse (cx - s * 0.14f, cy - s * 0.62f, s * 0.28f, s * 0.28f);
+    }
+    else if (name == "note")
+    {
+        g.fillEllipse (cx - s * 0.75f, cy + s * 0.2f, s * 0.8f, s * 0.6f); g.drawLine (cx + s * 0.02f, cy + s * 0.5f, cx + s * 0.02f, cy - s * 0.8f, lw);
+        g.drawLine (cx + s * 0.02f, cy - s * 0.8f, cx + s * 0.7f, cy - s * 0.4f, lw * 1.3f);
+    }
+    else if (name == "ring")
+    {
+        g.drawEllipse (r.withSizeKeepingCentre (s * 1.8f, s * 1.8f), lw); g.drawEllipse (r.withSizeKeepingCentre (s * 1.0f, s * 1.0f), lw * 0.9f);
+    }
+    else if (name == "spring")
+    {
+        Path p; p.startNewSubPath (cx - s * 0.9f, cy);
+        for (int i = 0; i < 6; ++i) p.lineTo (cx - s * 0.9f + (float) (i + 1) * s * 0.3f, cy + ((i % 2) ? s * 0.6f : -s * 0.6f));
+        g.strokePath (p, PathStrokeType (lw, PathStrokeType::curved));
+    }
+    else if (name == "plate")
+    {
+        g.drawRoundedRectangle (r.withSizeKeepingCentre (s * 1.8f, s * 1.5f), 2.0f, lw);
+        g.drawLine (cx - s * 0.5f, cy - s * 0.3f, cx + s * 0.5f, cy - s * 0.3f, lw * 0.7f); g.drawLine (cx - s * 0.5f, cy + s * 0.2f, cx + s * 0.5f, cy + s * 0.2f, lw * 0.7f);
+    }
+    else if (name == "drum")
+    {
+        g.drawEllipse (cx - s * 0.9f, cy - s * 0.7f, s * 1.8f, s * 0.7f, lw);
+        g.drawLine (cx - s * 0.9f, cy - s * 0.35f, cx - s * 0.9f, cy + s * 0.6f, lw); g.drawLine (cx + s * 0.9f, cy - s * 0.35f, cx + s * 0.9f, cy + s * 0.6f, lw);
+        Path p; p.addCentredArc (cx, cy + s * 0.6f, s * 0.9f, s * 0.35f, 0, MathConstants<float>::halfPi, MathConstants<float>::pi * 1.5f + 1.5708f, true);
+        g.strokePath (p, PathStrokeType (lw));
+    }
+    else if (name == "wave")
+    {
+        Path p; p.startNewSubPath (cx - s, cy);
+        for (int i = 1; i <= 24; ++i) { const float t = (float) i / 24.0f; p.lineTo (cx - s + t * 2.0f * s, cy - std::sin (t * tp * 1.5f) * s * 0.6f); }
+        g.strokePath (p, PathStrokeType (lw, PathStrokeType::curved));
+    }
+    else if (name == "bars")
+    {
+        const float hs[4] { 0.5f, 1.0f, 0.7f, 1.4f };
+        for (int i = 0; i < 4; ++i) g.fillRect (cx - s * 0.95f + (float) i * s * 0.5f, cy + s * 0.75f - hs[i] * s * 0.9f, s * 0.32f, hs[i] * s * 0.9f);
+    }
+}
+
+// Faceplate with texture, bevel, title strip (icon + letter-spaced name) and four steel screws.
+inline void paintModule (Graphics& g, Rectangle<float> r, Mat m, const String& title, const String& icon, int seed, float stripH = 30.0f)
+{
+    auto& A = Assets::get();
+    Path p; p.addRoundedRectangle (r, 5.0f);
+    DropShadow (Colours::black.withAlpha (0.72f), 10, { 0, 5 }).drawForPath (g, p);
+    g.saveState();
+    g.reduceClipRegion (p);
+    const int ox = (int) (r.getX() * 3.7f) + seed * 97, oy = (int) (r.getY() * 5.3f) + seed * 61;
+    switch (m)
+    {
+        case Mat::Green: g.setTiledImageFill (A.green, ox, oy, 1.0f); g.fillPath (p); g.setColour (Colour (0xff4c8a58).withAlpha (0.20f)); g.fillPath (p); break;
+        case Mat::Brass: g.setColour (Colour (0xffcaa054)); g.fillPath (p); g.setTiledImageFill (A.brass, ox, oy, 0.6f); g.setOpacity (0.55f); g.fillPath (p); break;
+        case Mat::Wood:  g.setTiledImageFill (A.wood, ox, oy, 1.0f); g.fillPath (p); g.setColour (Colour (0xff5a3018).withAlpha (0.25f)); g.fillPath (p); break;
+        default:         g.setTiledImageFill (metalTexture (m), ox, oy, 1.0f); g.fillPath (p); break;
+    }
+    g.setGradientFill (ColourGradient (Colours::white.withAlpha (m == Mat::Brass ? 0.30f : 0.15f), 0, r.getY(), Colours::black.withAlpha (0.36f), 0, r.getBottom(), false)); g.fillPath (p);
+    g.setGradientFill (ColourGradient (Colours::white.withAlpha (0.07f), r.getX(), r.getY(), Colours::transparentWhite, r.getCentreX(), r.getCentreY(), true)); g.fillPath (p);
+    g.restoreState();
+    g.setColour (Colours::black.withAlpha (0.92f)); g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.4f);
+    g.setColour (Colours::white.withAlpha (0.26f)); g.drawLine (r.getX() + 6, r.getY() + 1.8f, r.getRight() - 6, r.getY() + 1.8f, 1.1f);
+    g.setColour (Colours::white.withAlpha (0.12f)); g.drawLine (r.getX() + 1.8f, r.getY() + 6, r.getX() + 1.8f, r.getBottom() - 6, 1.0f);
+    g.setColour (Colours::black.withAlpha (0.40f)); g.drawRoundedRectangle (r.reduced (5.0f), 3.0f, 1.0f);
+    const Colour ink = inkFor (m);
+    if (title.isNotEmpty())
+    {
+        float x = r.getX() + 16.0f;
+        if (icon.isNotEmpty()) { drawIcon (g, icon, Rectangle<float> (16, 16).withCentre ({ x + 8.0f, r.getY() + stripH * 0.5f + 1.0f }), ink.withAlpha (0.9f)); x += 24.0f; }
+        auto tr = Rectangle<float> (x, r.getY() + 3.0f, r.getRight() - x - 40.0f, stripH - 4.0f);
+        g.setFont (font (18.0f, 3, 0.12f));
+        g.setColour (m == Mat::Brass ? Colours::white.withAlpha (0.35f) : Colours::black.withAlpha (0.75f)); g.drawText (title, tr.translated (0, 1), Justification::centredLeft, false);
+        g.setColour (ink); g.drawText (title, tr, Justification::centredLeft, false);
+        g.setColour (Colours::black.withAlpha (0.30f)); g.drawLine (r.getX() + 8, r.getY() + stripH + 1.0f, r.getRight() - 8, r.getY() + stripH + 1.0f, 1.0f);
+        g.setColour (Colours::white.withAlpha (0.10f)); g.drawLine (r.getX() + 8, r.getY() + stripH + 2.0f, r.getRight() - 8, r.getY() + stripH + 2.0f, 1.0f);
+    }
+    const float o = 9.0f, sz = 8.5f;
+    for (auto c : { Point<float> (r.getX() + o, r.getY() + o), Point<float> (r.getRight() - o, r.getY() + o), Point<float> (r.getX() + o, r.getBottom() - o), Point<float> (r.getRight() - o, r.getBottom() - o) })
+        drawScrew (g, c, sz, seed + (int) c.x, true);
+}
+
+// small printed label on a module (letter-spaced, engraved)
+inline void printLabel (Graphics& g, const String& t, Rectangle<float> r, Mat m, Justification j = Justification::centred, float h = 11.5f, bool dim = false)
+{
+    g.setFont (font (h, 2, 0.14f));
+    if (m != Mat::Brass) { g.setColour (Colours::black.withAlpha (0.7f)); g.drawText (t, r.translated (0, 1), j, false); }
+    g.setColour (inkFor (m).withAlpha (dim ? 0.75f : 1.0f)); g.drawText (t, r, j, false);
+}
+
+//------------------------------------------------------------------ channel fader with caption and value
+class Fader : public Component
+{
+public:
+    explicit Fader (const String& cap) : caption (cap)
+    {
+        s.setSliderStyle (Slider::LinearVertical); s.setTextBoxStyle (Slider::NoTextBox, true, 0, 0);
+        s.setScrollWheelEnabled (true); s.setPopupDisplayEnabled (false, false, nullptr);
+        s.onValueChange = [this] { repaint(); };
+        addAndMakeVisible (s);
+    }
+    ~Fader() override { att.reset(); }
+    void bind (APVTS& apvts, const String& id, double def, bool db)
+    {
+        att.reset();
+        if (id.isEmpty()) { setEnabled (false); setAlpha (0.4f); return; }
+        setEnabled (true); setAlpha (1.0f);
+        att = std::make_unique<APVTS::SliderAttachment> (apvts, id, s);
+        s.setDoubleClickReturnValue (true, def);
+        if (db) s.textFromValueFunction = [] (double v) { return (v > 0.04 ? "+" : "") + String (v, 1) + " dB"; };
+        s.updateText(); repaint();
+    }
+    void setInk (Colour i, Colour l) { ink = i; lit = l; s.getProperties().set ("ink", (int) i.getARGB()); repaint(); }
+    void paint (Graphics& g) override
+    {
+        auto b = getLocalBounds().toFloat();
+        engraved (g, caption, b.removeFromTop (16.0f), font (13.0f, 2, 0.12f), ink, Justification::centred);
+        g.setFont (font (12.5f, 2, 0.04f)); g.setColour (lit);
+        g.drawText (s.getTextFromValue (s.getValue()), b.removeFromBottom (16.0f), Justification::centred, false);
+    }
+    void resized() override { s.setBounds (getLocalBounds().withTrimmedTop (16).withTrimmedBottom (16)); }
+    Slider s;
+private:
+    String caption; Colour ink = col::cream, lit = col::amber; std::unique_ptr<APVTS::SliderAttachment> att;
+};
+
+// single-channel LED column (level, or gain reduction growing from the top)
+class LedColumn : public Component
+{
+public:
+    explicit LedColumn (bool reduction = false, int segments = 14) : red (reduction), n (segments) {}
+    void setDb (float db) { if (std::abs (db - v) > 0.15f) { v = db; repaint(); } }
+    void paint (Graphics& g) override
+    {
+        auto b = getLocalBounds().toFloat();
+        g.setColour (Colour (0xff070605)); g.fillRoundedRectangle (b, 2.5f);
+        g.setColour (Colours::black); g.drawRoundedRectangle (b.reduced (0.5f), 2.5f, 1.0f);
+        const float sh = (b.getHeight() - 6.0f) / (float) n;
+        for (int i = 0; i < n; ++i)
+        {
+            const float f = (float) i / (float) (n - 1);
+            bool lit; Colour base;
+            if (red) { lit = v >= 0.6f + f * 11.0f; base = Colour (0xffffb02e); }
+            else { const float th = -48.0f + f * 48.0f; lit = v >= th; base = f > 0.85f ? Colour (0xffff3a2a) : (f > 0.62f ? Colour (0xffffc42e) : Colour (0xff3fe05a)); }
+            const float y = red ? b.getY() + 3.0f + (float) i * sh : b.getBottom() - 3.0f - (float) (i + 1) * sh;
+            g.setColour (lit ? base : base.darker (3.4f).withAlpha (0.9f)); g.fillRoundedRectangle (b.getX() + 3.0f, y + 0.8f, b.getWidth() - 6.0f, sh - 1.8f, 1.2f);
+            if (lit) { g.setColour (base.withAlpha (0.22f)); g.fillRoundedRectangle (b.getX() + 1.5f, y, b.getWidth() - 3.0f, sh, 2.0f); }
+        }
+    }
+private:
+    bool red; int n; float v = -99.0f;
+};
+
+//------------------------------------------------------------------ tab button (walnut rail, polished brass when active)
+class NavTab : public Component
+{
+public:
+    explicit NavTab (const String& t, bool arrow = false) : text (t), hasArrow (arrow) { setMouseCursor (MouseCursor::PointingHandCursor); }
+    void setActive (bool a) { if (a != active) { active = a; repaint(); } }
+    void paint (Graphics& g) override
+    {
+        auto& A = Assets::get();
+        auto full = getLocalBounds().toFloat();
+        auto r = full.reduced (3.0f);
+        Path p; p.addRoundedRectangle (r, 4.0f);
+        if (active)
+        {
+            g.setGradientFill (ColourGradient (col::amber.withAlpha (0.38f), full.getCentreX(), full.getCentreY(), Colours::transparentBlack, full.getX(), full.getCentreY(), true));
+            g.fillRoundedRectangle (full, 6.0f);
+            g.setGradientFill (ColourGradient (Colour (0xfffbe6a4), 0, r.getY(), Colour (0xffb5812f), 0, r.getBottom(), false)); g.fillPath (p);
+            g.setTiledImageFill (A.brass, 0, 0, 0.25f); g.setOpacity (0.35f); g.fillPath (p);
+            g.setGradientFill (ColourGradient (Colours::white.withAlpha (0.45f), 0, r.getY(), Colours::transparentWhite, 0, r.getCentreY(), false)); g.fillPath (p);
+            g.setColour (Colour (0xff3b2a0e)); g.strokePath (p, PathStrokeType (1.2f));
+        }
+        else
+        {
+            g.saveState(); g.reduceClipRegion (p);
+            g.setTiledImageFill (A.wood, (int) getX() * 3, 11, 1.0f); g.fillPath (p);
+            g.setColour (Colour (0xff1a0e06).withAlpha (0.45f)); g.fillPath (p);
+            g.setGradientFill (ColourGradient (Colours::white.withAlpha (over ? 0.16f : 0.07f), 0, r.getY(), Colours::black.withAlpha (0.42f), 0, r.getBottom(), false)); g.fillPath (p);
+            g.restoreState();
+            g.setColour (col::brass.withAlpha (over ? 0.95f : 0.55f)); g.drawLine (r.getX() + 5, r.getY() + 1.2f, r.getRight() - 5, r.getY() + 1.2f, 1.0f);   // brass hairline
+            g.setColour (Colours::black.withAlpha (0.9f)); g.strokePath (p, PathStrokeType (1.2f));
+        }
+        const float arrowW = hasArrow ? 14.0f : 0.0f;
+        auto tr = r.withTrimmedRight (arrowW);
+        g.setFont (font (17.0f, 3, 0.20f));
+        if (active) { g.setColour (Colour (0xfff5df9e).withAlpha (0.55f)); g.drawText (text, tr.translated (0, 1), Justification::centred, false); g.setColour (Colour (0xff2a1c06)); }
+        else { g.setColour (Colours::black.withAlpha (0.85f)); g.drawText (text, tr.translated (0, 1), Justification::centred, false); g.setColour (over ? col::amber : col::cream); }
+        g.drawText (text, tr, Justification::centred, false);
+        if (hasArrow)
+        {
+            Path t; const float ax = r.getRight() - 12.0f, ay = r.getCentreY();
+            t.addTriangle (ax - 4.5f, ay - 2.5f, ax + 4.5f, ay - 2.5f, ax, ay + 3.0f);
+            g.setColour (active ? Colour (0xff2a1c06) : col::brass); g.fillPath (t);
+        }
+    }
+    void mouseEnter (const MouseEvent&) override { over = true; repaint(); }
+    void mouseExit (const MouseEvent&) override { over = false; repaint(); }
+    void mouseUp (const MouseEvent& e) override { if (getLocalBounds().contains (e.getPosition()) && onClick) { arrowHit = hasArrow && e.x > getWidth() - 30; onClick(); } }
+    std::function<void()> onClick;
+    bool arrowHit = false;
+private:
+    String text; bool hasArrow, active = false, over = false;
+};
+
+// brass cog for the settings menu
+class CogButton : public Component
+{
+public:
+    CogButton() { setMouseCursor (MouseCursor::PointingHandCursor); }
+    void paint (Graphics& g) override
+    {
+        auto b = getLocalBounds().toFloat();
+        const float cx = b.getCentreX(), cy = b.getCentreY() - 6.0f, R = jmin (b.getWidth(), b.getHeight() - 12.0f) * 0.5f;
+        Path cog; bool first = true;
+        const int teeth = 10;
+        for (int i = 0; i < teeth * 2; ++i)
+        {
+            const float a0 = (float) i * MathConstants<float>::pi / (float) teeth, a1 = a0 + MathConstants<float>::pi / (float) teeth * 0.7f;
+            const float rad = (i % 2) ? R * 0.78f : R;
+            for (float a : { a0, a1 }) { Point<float> q (cx + std::sin (a) * rad, cy - std::cos (a) * rad); if (first) { cog.startNewSubPath (q); first = false; } else cog.lineTo (q); }
+        }
+        cog.closeSubPath();
+        DropShadow (Colours::black.withAlpha (0.7f), 5, { 0, 3 }).drawForPath (g, cog);
+        g.setGradientFill (ColourGradient (over ? Colour (0xfffbe6a4) : Colour (0xffe6c37a), cx - R, cy - R, Colour (0xff7a5a22), cx + R, cy + R, false)); g.fillPath (cog);
+        g.setColour (Colours::black.withAlpha (0.8f)); g.strokePath (cog, PathStrokeType (1.0f));
+        g.setColour (Colour (0xff15110b)); g.fillEllipse (cx - R * 0.36f, cy - R * 0.36f, R * 0.72f, R * 0.72f);
+        g.setColour (col::brassDark); g.drawEllipse (cx - R * 0.36f, cy - R * 0.36f, R * 0.72f, R * 0.72f, 1.2f);
+        engraved (g, "SETTINGS", b.removeFromBottom (14.0f), font (11.5f, 2, 0.14f), over ? col::amber : col::cream);
+    }
+    void mouseEnter (const MouseEvent&) override { over = true; repaint(); }
+    void mouseExit (const MouseEvent&) override { over = false; repaint(); }
+    void mouseUp (const MouseEvent& e) override { if (getLocalBounds().contains (e.getPosition()) && onClick) onClick(); }
+    std::function<void()> onClick;
+private:
+    bool over = false;
+};
+
+// glowing label sitting on a piece of kit in a room picture
+class Hotspot : public Component
+{
+public:
+    explicit Hotspot (const String& t) : text (t) { setMouseCursor (MouseCursor::PointingHandCursor); }
+    void paint (Graphics& g) override
+    {
+        auto b = getLocalBounds().toFloat();
+        auto pill = b.reduced (7.0f);
+        g.setGradientFill (ColourGradient (col::amber.withAlpha (over ? 0.62f : 0.38f), b.getCentreX(), b.getCentreY(), Colours::transparentBlack, b.getX(), b.getCentreY(), true)); g.fillRoundedRectangle (b, 12.0f);
+        g.setColour (Colour (0xff120e08).withAlpha (0.88f)); g.fillRoundedRectangle (pill, 5.0f);
+        g.setColour (over ? col::amber : col::brass); g.drawRoundedRectangle (pill, 5.0f, over ? 1.6f : 1.2f);
+        g.setFont (font (13.0f, 2, 0.16f)); g.setColour (over ? Colours::white : col::cream); g.drawText (text, pill, Justification::centred, false);
+    }
+    void mouseEnter (const MouseEvent&) override { over = true; repaint(); }
+    void mouseExit (const MouseEvent&) override { over = false; repaint(); }
+    void mouseUp (const MouseEvent& e) override { if (getLocalBounds().contains (e.getPosition()) && onClick) onClick(); }
+    std::function<void()> onClick;
+    int widthFor() const { return roundToInt (font (13.0f, 2, 0.16f).getStringWidthFloat (text)) + 38; }
+private:
+    String text; bool over = false;
+};
+
+// "PRESET  <  name  >  SAVE" strip that sits on the room picture
+class PresetStrip : public Component
+{
+public:
+    PresetStrip()
+    {
+        for (auto* b : { &prev, &next }) { b->getProperties().set ("role", "recess"); addAndMakeVisible (*b); }
+        prev.setButtonText ("<"); next.setButtonText (">");
+        nameB.getProperties().set ("role", "name"); addAndMakeVisible (nameB);
+        saveB.getProperties().set ("role", "brass"); saveB.setButtonText ("SAVE"); addAndMakeVisible (saveB);
+        prev.setTooltip ("Previous preset"); next.setTooltip ("Next preset"); nameB.setTooltip ("Click to choose a preset"); saveB.setTooltip ("Save the current settings as your own preset");
+    }
+    void setName (const String& n) { nameB.setButtonText (n.isEmpty() ? String ("INIT") : n.toUpperCase()); }
+    void paint (Graphics& g) override
+    {
+        auto b = getLocalBounds().toFloat();
+        g.setColour (Colour (0xff0b0907).withAlpha (0.88f)); g.fillRoundedRectangle (b, 6.0f);
+        g.setColour (col::brass.withAlpha (0.8f)); g.drawRoundedRectangle (b.reduced (0.7f), 6.0f, 1.2f);
+        engraved (g, "PRESET", b.withWidth (62.0f).translated (6, 0), font (12.0f, 2, 0.16f), col::brass, Justification::centredLeft);
+    }
+    void resized() override
+    {
+        auto r = getLocalBounds().reduced (5, 5); r.removeFromLeft (64);
+        saveB.setBounds (r.removeFromRight (58)); r.removeFromRight (5);
+        prev.setBounds (r.removeFromLeft (26)); r.removeFromLeft (3); next.setBounds (r.removeFromRight (26)); r.removeFromRight (3);
+        nameB.setBounds (r);
+    }
+    juce::TextButton prev, next, nameB, saveB;
 };
 
 } // namespace ui

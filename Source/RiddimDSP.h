@@ -412,14 +412,16 @@ private:
 class TapeStage
 {
 public:
-    struct Params { float sat = 0, tone = 1, wow = 0, flutter = 0, wear = 0; int type = 0; bool on = true; };
+    // type: 0 A Clean, 1 B Weight, 2 C Vintage.  speed: 0 7.5, 1 15, 2 30 IPS.
+    // stab: 1 = perfectly stable transport, lower adds extra slow wow and drift.  mix: parallel blend with the dry (unmodulated) signal.
+    struct Params { float sat = 0, tone = 1, wow = 0, flutter = 0, wear = 0; int type = 0; bool on = true; int speed = 1; float stab = 1.0f, mix = 1.0f; };
 
     static constexpr float kBaseDelaySeconds = 0.0020f;
 
     void prepare (double sampleRate)
     {
         sr = sampleRate;
-        baseDelay = kBaseDelaySeconds * (float) sr;
+        baseDelay = (float) std::lround (kBaseDelaySeconds * sr);
         size = (int) (sr * 0.006) + 8;
         for (auto& b : line) b.assign ((size_t) size, 0.0f);
         pos = 0; reset();
@@ -431,35 +433,46 @@ public:
         for (auto& x : toneLp) x.reset();
         for (auto& x : wearLp) x.reset();
         for (auto& x : bump) x.reset();
-        wowPh = flutPh = flut2Ph = 0.0f; cachedType = -1; cachedWear = -1; cachedTone = -1;
+        for (auto& x : preEmph) x.reset();
+        wowPh = flutPh = flut2Ph = 0.0f; drift = 0.0f; cachedType = -1; cachedWear = -1; cachedTone = -1; cachedSpeed = -1;
     }
 
     void process (float* l, float* r, int n, const Params& p)
     {
+        const float st = juce::jlimit (0.0f, 1.0f, 1.0f - p.stab);                         // 0 = stable
         const float typeWow = p.type == 2 ? 1.6f : (p.type == 1 ? 1.15f : 1.0f);
-        const float wowDepth = p.on ? p.wow * typeWow * 0.0009f * (float) sr : 0.0f;          // samples (about +-0.4% pitch at max)
-        const float fluDepth = p.on ? p.flutter * typeWow * 0.00006f * (float) sr : 0.0f;
+        const float wowAmt = juce::jmin (1.6f, p.wow + st * 0.45f), fluAmt = juce::jmin (1.6f, p.flutter + st * 0.22f);
+        const float limit = baseDelay - 3.0f;                                               // never read ahead of the write head
+        const float wowDepth = p.on ? wowAmt * typeWow * 0.0009f * (float) sr : 0.0f;       // samples (about +-0.4% pitch at max)
+        const float fluDepth = p.on ? fluAmt * typeWow * 0.00006f * (float) sr : 0.0f;
+        const float driftDepth = p.on ? st * 0.0006f * (float) sr : 0.0f;
+        const float driftCoef = 1.0f - std::exp (-2.0f * kPi * 0.35f / (float) sr);
         const float wowInc = 2.0f * kPi * 0.65f / (float) sr, fluInc = 2.0f * kPi * 9.3f / (float) sr, flu2Inc = 2.0f * kPi * 13.7f / (float) sr;
 
-        if (p.type != cachedType || p.wear != cachedWear || p.tone != cachedTone) retune (p);
-        const float drive = p.sat * (p.type == 0 ? 0.85f : 1.0f);
-        const float bias = p.type == 0 ? 0.0f : 0.10f;                     // asymmetry = even harmonics
+        if (p.type != cachedType || p.wear != cachedWear || p.tone != cachedTone || p.speed != cachedSpeed) retune (p);
+        const float speedDrive = p.speed == 0 ? 1.25f : (p.speed == 2 ? 0.8f : 1.0f);      // slower tape saturates earlier
+        const float drive = p.sat * (p.type == 0 ? 0.85f : 1.0f) * speedDrive;
+        const float bias = p.type == 0 ? 0.0f : (p.type == 1 ? 0.14f : 0.10f);             // asymmetry = even harmonics
         const float blend = p.on ? juce::jmin (1.0f, p.sat * 1.6f) : 0.0f;
         const float hiss = p.on ? p.wear * (p.type == 2 ? 0.0030f : 0.0016f) : 0.0f;
+        const float wetMix = p.on ? juce::jlimit (0.0f, 1.0f, p.mix) : 1.0f;
+        const int dryTap = (int) std::lround (baseDelay);
 
         for (int i = 0; i < n; ++i)
         {
             wowPh += wowInc; if (wowPh > 2.0f * kPi) wowPh -= 2.0f * kPi;
             flutPh += fluInc; if (flutPh > 2.0f * kPi) flutPh -= 2.0f * kPi;
             flut2Ph += flu2Inc; if (flut2Ph > 2.0f * kPi) flut2Ph -= 2.0f * kPi;
-            const float mod = wowDepth * std::sin (wowPh) + fluDepth * (0.7f * std::sin (flutPh) + 0.3f * std::sin (flut2Ph));
+            drift += (rng.nextFloat() * 2.0f - 1.0f - drift) * driftCoef * 6.0f;
+            drift = juce::jlimit (-1.0f, 1.0f, drift);
+            const float mod = juce::jlimit (-limit, limit, wowDepth * std::sin (wowPh) + fluDepth * (0.7f * std::sin (flutPh) + 0.3f * std::sin (flut2Ph)) + driftDepth * drift);
             float* io[2] { l + i, r + i };
             for (int c = 0; c < 2; ++c)
             {
                 float x = *io[c];
-                // wow / flutter: read the delay line at a moving position
                 auto& buf = line[(size_t) c];
                 buf[(size_t) pos] = x;
+                float dry = buf[(size_t) ((pos - dryTap + size) % size)];
                 float rd = (float) pos - (baseDelay + mod);
                 while (rd < 0) rd += (float) size;
                 while (rd >= (float) size) rd -= (float) size;
@@ -469,13 +482,15 @@ public:
 
                 if (p.on)
                 {
-                    if (p.type != 0) x = bump[(size_t) c].process (x);                  // head bump
-                    const float sat = (std::tanh ((x + bias) * (1.0f + drive * 7.0f)) - std::tanh (bias * (1.0f + drive * 7.0f)))
-                                      / ((1.0f + drive * 7.0f) * (1.0f - std::pow (std::tanh (bias * (1.0f + drive * 7.0f)), 2.0f)));
+                    if (p.type == 1) x = preEmph[(size_t) c].process (x);               // B: weight - low end drives the tape harder
+                    const float k = 1.0f + drive * 7.0f;
+                    const float sat = (std::tanh ((x + bias) * k) - std::tanh (bias * k)) / (k * (1.0f - std::pow (std::tanh (bias * k), 2.0f)));
                     x = x + (sat - x) * blend;
+                    if (p.type != 0) x = bump[(size_t) c].process (x);                  // head bump
                     x = toneLp[(size_t) c].process (x);
                     if (p.wear > 0.001f) x = wearLp[(size_t) c].process (x);
                     if (hiss > 0.0f) x += hiss * (rng.nextFloat() * 2.0f - 1.0f);
+                    x = dry + (x - dry) * wetMix;
                 }
                 *io[c] = x;
             }
@@ -486,21 +501,57 @@ public:
 private:
     void retune (const Params& p)
     {
-        cachedType = p.type; cachedWear = p.wear; cachedTone = p.tone;
-        const double toneHz = 2200.0 * std::pow (20000.0 / 2200.0, (double) p.tone);
+        cachedType = p.type; cachedWear = p.wear; cachedTone = p.tone; cachedSpeed = p.speed;
+        const double spd = p.speed == 0 ? 0.72 : (p.speed == 2 ? 1.30 : 1.0);            // slower speed = duller top end
+        const double toneHz = 2200.0 * std::pow (20000.0 / 2200.0, (double) p.tone) * (p.speed == 1 ? 1.0 : (p.speed == 0 ? 0.8 : 1.0));
         const double maxHz = sr * 0.45;
-        for (auto& f : toneLp) f.lowpass (sr, juce::jmin (toneHz, maxHz), 0.707);
-        const double wearHz = p.wear > 0.001f ? 16000.0 * std::pow (4500.0 / 16000.0, (double) p.wear) * (p.type == 2 ? 0.8 : 1.0) : maxHz;
+        for (auto& f : toneLp) f.lowpass (sr, juce::jmin (toneHz * (p.speed == 2 ? 1.0 : 1.0), juce::jmin (maxHz, 20000.0 * spd)), 0.707);
+        const double wearHz = p.wear > 0.001f ? 16000.0 * std::pow (4500.0 / 16000.0, (double) p.wear) * (p.type == 2 ? 0.8 : 1.0) * spd : maxHz;
         for (auto& f : wearLp) f.lowpass (sr, juce::jmin (wearHz, maxHz), 0.707);
-        for (auto& f : bump) f.lowShelf (sr, 90.0, 0.8, p.type == 2 ? 2.0 : 2.5);
+        const double bumpHz = p.speed == 0 ? 60.0 : (p.speed == 1 ? 90.0 : 130.0);        // head bump moves with the tape speed
+        for (auto& f : bump) f.peak (sr, bumpHz, 0.9, p.type == 1 ? 3.5 : 2.0);
+        for (auto& f : preEmph) f.lowShelf (sr, 160.0, 0.7, 3.0);
     }
 
-    double sr = 48000.0; float baseDelay = 72.0f; int size = 300, pos = 0;
+    double sr = 48000.0; float baseDelay = 96.0f; int size = 300, pos = 0;
     std::array<std::vector<float>, 2> line;
-    std::array<Biquad, 2> toneLp, wearLp, bump;
-    float wowPh = 0, flutPh = 0, flut2Ph = 0;
-    int cachedType = -1; float cachedWear = -1, cachedTone = -1;
+    std::array<Biquad, 2> toneLp, wearLp, bump, preEmph;
+    float wowPh = 0, flutPh = 0, flut2Ph = 0, drift = 0;
+    int cachedType = -1, cachedSpeed = -1; float cachedWear = -1, cachedTone = -1;
     juce::Random rng { 1234 };
+};
+
+//==============================================================================
+//  Small building blocks for the reverbs
+//==============================================================================
+struct DLine
+{
+    std::vector<float> b; int w = 0, n = 1;
+    void init (int len) { n = juce::jmax (4, len + 4); b.assign ((size_t) n, 0.0f); w = 0; }
+    void clear() { std::fill (b.begin(), b.end(), 0.0f); w = 0; }
+    void push (float x) { b[(size_t) w] = x; if (++w >= n) w = 0; }
+    // sample written d samples ago (d = 0 is the newest)
+    float tap (int d) const { int r = w - 1 - d; while (r < 0) r += n; return b[(size_t) r]; }
+    float tapF (float d) const
+    {
+        const int i = (int) d; const float f = d - (float) i;
+        return tap (i) * (1.0f - f) + tap (i + 1) * f;
+    }
+};
+
+// Schroeder allpass with a (optionally modulated) delay: unity gain at every frequency.
+struct Allpass
+{
+    DLine d; int len = 1; float g = 0.5f;
+    void init (int length, float gain) { len = juce::jmax (1, length); g = gain; d.init (len + 40); }
+    float process (float x, float mod = 0.0f)
+    {
+        const float del = d.tapF (juce::jmax (0.0f, (float) len - 1.0f + mod));
+        const float w = x + g * del;
+        const float y = -g * w + del;
+        d.push (w);
+        return y;
+    }
 };
 
 //==============================================================================
@@ -522,6 +573,8 @@ public:
         float feedback = 0.46f, mix = 0.26f, cutoff = 2800.0f, resonance = 0.35f, heat = 0.28f, damping = 0.42f;
         int filterMode = 0;      // 0 low, 1 high, 2 band
         int type = 0;            // 0 tape, 1 digital, 2 ping-pong
+        bool heads[3] { true, false, false };   // playback heads at 1x, 2x, 3x the delay time
+        float revLoop = 0.0f;                    // diffusion (reverb) inside the feedback loop
         bool panic = false;
     };
 
@@ -538,9 +591,13 @@ public:
         mixS.reset (sampleRate, 0.025); fbS.reset (sampleRate, 0.035); cutS.reset (sampleRate, 0.03);
         heatS.reset (sampleRate, 0.03); dampS.reset (sampleRate, 0.03); d0S.reset (sampleRate, 0.06); d1S.reset (sampleRate, 0.06);
         first = true; panicGain = 1.0f; wasPanic = false;
+        const float ks = (float) (sampleRate / 48000.0); const int lens[3] { 113, 191, 277 };
+        for (int c = 0; c < 2; ++c) for (int i = 0; i < 3; ++i) diff[c][i].init (juce::jmax (2, (int) (lens[i] * ks * (c ? 1.13f : 1.0f))), 0.55f);
+        diffLp[0] = diffLp[1] = 0.0f;
     }
     void reset()
     {
+        for (auto& d : diff) for (auto& a : d) a.d.clear();
         for (auto& b : buf) std::fill (b.begin(), b.end(), 0.0f);
         for (auto& f : filt) f.reset();
         first = true;
@@ -568,6 +625,9 @@ public:
                                             : juce::dsp::StateVariableTPTFilterType::lowpass;
         const float q = 0.5f * std::pow (16.0f, juce::jlimit (0.0f, 1.0f, (p.resonance - 0.1f) / 0.82f));   // 0.5 .. 8
         float* io[2] { l, r };
+        const int nHeads = (p.heads[0] ? 1 : 0) + (p.heads[1] ? 1 : 0) + (p.heads[2] ? 1 : 0);
+        const float wSum = (p.heads[0] ? 1.0f : 0.0f) + (p.heads[1] ? 0.8f : 0.0f) + (p.heads[2] ? 0.65f : 0.0f);
+        const float headNorm = wSum > 0.01f ? 1.0f / wSum : 1.0f;     // loop gain can never exceed the feedback setting
 
         for (int i = 0; i < n; ++i)
         {
@@ -588,7 +648,27 @@ public:
                 while (rp < 0.0f) rp += (float) length;
                 if (rp >= (float) length) rp -= (float) length;
                 const int i0 = juce::jlimit (0, length - 1, (int) rp); const float fr = juce::jlimit (0.0f, 1.0f, rp - (float) i0); const int i1 = (i0 + 1) % length;
-                const float delayed = buf[(size_t) c][(size_t) i0] * (1.0f - fr) + buf[(size_t) c][(size_t) i1] * fr;
+                float delayed = buf[(size_t) c][(size_t) i0] * (1.0f - fr) + buf[(size_t) c][(size_t) i1] * fr;
+                if (nHeads > 1 || ! p.heads[0])
+                {
+                    delayed = p.heads[0] ? delayed : 0.0f;
+                    for (int h = 1; h < 3; ++h)
+                        if (p.heads[h])
+                        {
+                            float rh = (float) write - juce::jmin (dl[c] * (float) (h + 1), maxD); while (rh < 0.0f) rh += (float) length;
+                            if (rh >= (float) length) rh -= (float) length;
+                            const int j0 = juce::jlimit (0, length - 1, (int) rh); const float fh = juce::jlimit (0.0f, 1.0f, rh - (float) j0); const int j1 = (j0 + 1) % length;
+                            delayed += (buf[(size_t) c][(size_t) j0] * (1.0f - fh) + buf[(size_t) c][(size_t) j1] * fh) * (h == 1 ? 0.8f : 0.65f);
+                        }
+                    delayed *= headNorm;
+                }
+                if (p.revLoop > 0.001f)        // reverb in the loop: repeats smear into each other
+                {
+                    float d = delayed;
+                    for (int a = 0; a < 3; ++a) d = diff[c][a].process (d);
+                    diffLp[c] += (d - diffLp[c]) * 0.55f;
+                    delayed += (diffLp[c] - delayed) * juce::jlimit (0.0f, 1.0f, p.revLoop);
+                }
                 auto& f = filt[(size_t) c];
                 f.setType (type); f.setCutoffFrequency (cutoff); f.setResonance (loopQ);
                 float x = f.processSample (0, delayed);
@@ -626,6 +706,7 @@ private:
     std::array<juce::dsp::StateVariableTPTFilter<float>, 2> filt;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mixS, fbS, cutS, heatS, dampS, d0S, d1S;
     bool first = true, wasPanic = false; float panicGain = 1.0f;
+    std::array<std::array<Allpass, 3>, 2> diff; float diffLp[2] { 0, 0 };
 };
 
 //==============================================================================
@@ -693,56 +774,234 @@ private:
 };
 
 //==============================================================================
-//  REVERB: Spring / Plate / Hall / Room / Dub built on the JUCE reverb core,
-//  with pre-delay, per-type tone shaping and a dispersive "drip" for the spring.
+//  SPRING TANK: a physical-style model.  Each spring is a dispersive allpass
+//  cascade (low frequencies travel slower than highs, which is what makes the
+//  "boing" chirp) inside a feedback loop with a delay line and a damping filter.
+//  Seven characters differ in dispersion, loop time, regeneration and tone.
 //==============================================================================
-class ReverbStage
+class SpringEngine
 {
 public:
-    struct Params { int type = 0; float preMs = 20.0f, decay = 0.4f, mix = 0.0f; };
+    struct Params { int character = 1, length = 1; float drive = 0.25f, fb = 0.3f, treble = 0.5f, bass = 0.5f, decay = 0.4f; bool mono = false; };
 
     void prepare (double sampleRate)
     {
-        sr = sampleRate; rev.setSampleRate (sampleRate);
-        preSize = (int) (sampleRate * 0.13) + 8;
-        for (auto& b : pre) b.assign ((size_t) preSize, 0.0f);
+        sr = sampleRate;
+        for (auto& s : sp) { s.dl.init ((int) (sr * 0.12)); }
         reset();
     }
     void reset()
     {
-        rev.reset();
+        for (auto& s : sp)
+        {
+            s.dl.clear(); s.ap.fill (0.0f); s.lp = s.dc = s.dcIn = s.prev = 0.0f;
+            s.inHp.reset(); s.inShelf.reset(); s.tBass.reset(); s.tTreb.reset(); s.dcOut.reset();
+        }
+        lfo = 0.0f; cachedChar = -1; cachedTb = -1.0f;
+    }
+
+    // in: pre-delayed mono-ish input (per channel); out: wet signal
+    void process (const float* inL, const float* inR, float* outL, float* outR, int n, const Params& p)
+    {
+        if (p.character != cachedChar || p.treble != cachedTr || p.bass != cachedBs) retune (p);
+        const auto& cd = chars[(size_t) juce::jlimit (0, 6, p.character)];
+        const float lenScale = p.length == 0 ? 0.80f : (p.length == 2 ? 1.12f : 1.0f);
+        float fb = cd.fb * lenScale * (0.80f + 0.40f * juce::jlimit (0.0f, 1.0f, p.decay)) + (p.fb - 0.30f) * 0.25f;
+        fb = juce::jlimit (0.0f, 0.95f, fb);
+        const float drive = p.drive * 0.8f;
+        const float lpCoef = 1.0f - std::exp (-2.0f * kPi * cd.lpHz / (float) sr);
+        const float lfoInc = 2.0f * kPi * cd.modRate / (float) sr;
+
+        for (int i = 0; i < n; ++i)
+        {
+            lfo += lfoInc; if (lfo > 2.0f * kPi) lfo -= 2.0f * kPi;
+            const float in = 0.5f * (inL[i] + inR[i]);
+            float o[2];
+            for (int c = 0; c < 2; ++c)
+            {
+                auto& s = sp[(size_t) c];
+                const float skew = c == 0 ? 1.0f : 1.137f;                             // the second spring is a little longer
+                float x = s.inHp.process (in);
+                x = s.inShelf.process (x);
+                x = softSat (x, drive);
+                // feedback path: damped, DC-blocked
+                float v = x + fb * s.prev;
+                // dispersion: first-order allpass cascade
+                const float a = cd.apCoef * (c == 0 ? 1.0f : 0.965f);
+                for (int k = 0; k < cd.stages; ++k)
+                {
+                    const float y = -a * v + s.ap[(size_t) k];
+                    s.ap[(size_t) k] = v + a * y;
+                    v = y;
+                }
+                s.dl.push (v);
+                float dTime = cd.loopMs * 0.001f * (float) sr * skew;
+                dTime *= 1.0f + cd.modDepth * std::sin (lfo + (c ? 1.7f : 0.0f));
+                const float dl = s.dl.tapF (juce::jlimit (4.0f, (float) s.dl.n - 6.0f, dTime));
+                s.lp += (dl - s.lp) * lpCoef;
+                const float hpOut = s.lp - s.dc; s.dc += hpOut * 0.0008f;               // remove DC from the loop
+                s.prev = juce::jlimit (-2.0f, 2.0f, hpOut);
+                float y = 0.55f * v + 0.45f * s.prev;
+                y = s.tBass.process (y); y = s.tTreb.process (y);
+                o[c] = y * cd.gain;
+            }
+            if (p.mono) { const float m = 0.5f * (o[0] + o[1]); o[0] = o[1] = m; }
+            outL[i] = o[0]; outR[i] = o[1];
+        }
+    }
+
+private:
+    struct Char { int stages; float apCoef, loopMs, fb, lpHz, hpHz, shelfDb, modRate, modDepth, gain, outShelf; };
+    // Drip, Roots, Twang, Heavy, Surf, Dark Tank, Shimmer
+    const std::array<Char, 7> chars { {
+        { 40, 0.68f, 26.0f, 0.78f, 4800.0f, 200.0f,  4.0f, 0.00f, 0.000f, 1.25f, 0.0f },
+        { 28, 0.62f, 34.0f, 0.85f, 4200.0f, 160.0f,  0.0f, 0.00f, 0.000f, 1.25f, 0.0f },
+        { 22, 0.55f, 22.0f, 0.80f, 7000.0f, 420.0f,  3.0f, 0.00f, 0.000f, 1.20f, 1.5f },
+        { 34, 0.70f, 40.0f, 0.88f, 3200.0f, 110.0f, -2.0f, 0.00f, 0.000f, 1.30f, -1.0f },
+        { 46, 0.72f, 30.0f, 0.85f, 6500.0f, 230.0f,  3.0f, 0.80f, 0.020f, 1.20f, 1.0f },
+        { 30, 0.64f, 38.0f, 0.86f, 2200.0f, 140.0f, -3.0f, 0.00f, 0.000f, 1.35f, -2.0f },
+        { 26, 0.58f, 28.0f, 0.86f, 9000.0f, 260.0f,  2.0f, 0.45f, 0.012f, 1.15f, 5.0f } } };
+
+    void retune (const Params& p)
+    {
+        cachedChar = p.character; cachedTr = p.treble; cachedBs = p.bass; cachedTb = 0.0f;
+        const auto& cd = chars[(size_t) juce::jlimit (0, 6, p.character)];
+        for (auto& s : sp)
+        {
+            s.inHp.highpass (sr, cd.hpHz, 0.707);
+            s.inShelf.highShelf (sr, 2200.0, 0.7, cd.shelfDb);
+            s.tBass.lowShelf (sr, 180.0, 0.7, (p.bass - 0.5f) * 16.0f);
+            s.tTreb.highShelf (sr, 3800.0, 0.7, (p.treble - 0.5f) * 16.0f + cd.outShelf);
+        }
+    }
+
+    struct Spring
+    {
+        DLine dl; std::array<float, 64> ap {}; float lp = 0, dc = 0, dcIn = 0, prev = 0;
+        Biquad inHp, inShelf, tBass, tTreb, dcOut;
+    };
+    double sr = 48000.0; std::array<Spring, 2> sp; float lfo = 0.0f;
+    int cachedChar = -1; float cachedTr = -1.0f, cachedBs = -1.0f, cachedTb = -1.0f;
+};
+
+//==============================================================================
+//  PLATE: figure-of-eight tank (two cross-coupled branches of modulated
+//  allpasses, delays and damping) in the style of Dattorro's plate design.
+//==============================================================================
+class PlateEngine
+{
+public:
+    struct Params { float decay = 0.4f, damp = 0.4f, lowCut = 0.15f, width = 1.0f; int tone = 1; };
+
+    void prepare (double sampleRate)
+    {
+        sr = sampleRate; k = (float) (sr / 29761.0);
+        auto S = [&] (int v) { return juce::jmax (2, (int) std::lround ((float) v * k)); };
+        inAp[0].init (S (142), 0.75f); inAp[1].init (S (107), 0.75f); inAp[2].init (S (379), 0.625f); inAp[3].init (S (277), 0.625f);
+        apMod[0].init (S (672), -0.70f); apMod[1].init (S (908), -0.70f);
+        dl1[0].init (S (4453)); dl1[1].init (S (4217));
+        ap2[0].init (S (1800), 0.50f); ap2[1].init (S (2656), 0.50f);
+        dl2[0].init (S (3720)); dl2[1].init (S (3163));
+        reset();
+    }
+    void reset()
+    {
+        for (auto& a : inAp) a.d.clear(); for (auto& a : apMod) a.d.clear(); for (auto& a : ap2) a.d.clear();
+        for (auto& d : dl1) d.clear(); for (auto& d : dl2) d.clear();
+        lpState[0] = lpState[1] = bw = 0.0f; fbL = fbR = 0.0f; lfo = 0.0f; cachedTone = -1; cachedLow = -1.0f;
+        for (auto& f : outHp) f.reset(); for (auto& f : outShelf) f.reset();
+    }
+
+    void process (const float* inL, const float* inR, float* outL, float* outR, int n, const Params& p)
+    {
+        if (p.tone != cachedTone || p.lowCut != cachedLow) retune (p);
+        const float dec = 0.30f + 0.65f * juce::jlimit (0.0f, 1.0f, p.decay);
+        const float damp = 0.05f + 0.90f * juce::jlimit (0.0f, 1.0f, p.damp);
+        const float bwCoef = p.tone == 0 ? 0.98f : (p.tone == 2 ? 0.55f : 0.80f);
+        const float lfoInc = 2.0f * kPi * 0.9f / (float) sr, depth = 7.0f * k;
+        auto T = [&] (int v) { return juce::jmax (0, (int) std::lround ((float) v * k)); };
+
+        for (int i = 0; i < n; ++i)
+        {
+            lfo += lfoInc; if (lfo > 2.0f * kPi) lfo -= 2.0f * kPi;
+            float x = 0.5f * (inL[i] + inR[i]);
+            bw += (x - bw) * bwCoef; x = bw;
+            for (auto& a : inAp) x = a.process (x);
+            // left branch
+            float l = apMod[0].process (x + dec * fbR, depth * std::sin (lfo));
+            dl1[0].push (l);
+            float yl = dl1[0].tap (dl1[0].n - 6);
+            lpState[0] = (1.0f - damp) * yl + damp * lpState[0];
+            float l2 = ap2[0].process (lpState[0] * dec);
+            dl2[0].push (l2);
+            fbL = dl2[0].tap (dl2[0].n - 6);
+            // right branch
+            float r = apMod[1].process (x + dec * fbL, depth * std::sin (lfo + 2.1f));
+            dl1[1].push (r);
+            float yr = dl1[1].tap (dl1[1].n - 6);
+            lpState[1] = (1.0f - damp) * yr + damp * lpState[1];
+            float r2 = ap2[1].process (lpState[1] * dec);
+            dl2[1].push (r2);
+            fbR = dl2[1].tap (dl2[1].n - 6);
+
+            float oL = dl1[1].tap (T (266)) + dl1[1].tap (T (2974)) - ap2[1].d.tap (T (1913)) + dl2[1].tap (T (1996)) - dl1[0].tap (T (1990)) - ap2[0].d.tap (T (187)) - dl2[0].tap (T (1066));
+            float oR = dl1[0].tap (T (353)) + dl1[0].tap (T (3627)) - ap2[0].d.tap (T (1228)) + dl2[0].tap (T (2111)) - dl1[1].tap (T (335)) - ap2[1].d.tap (T (2132)) - dl2[1].tap (T (121));
+            oL *= 0.55f; oR *= 0.55f;
+            const float m = 0.5f * (oL + oR), s = 0.5f * (oL - oR) * p.width;
+            oL = outShelf[0].process (outHp[0].process (m + s));
+            oR = outShelf[1].process (outHp[1].process (m - s));
+            outL[i] = oL; outR[i] = oR;
+        }
+    }
+
+private:
+    void retune (const Params& p)
+    {
+        cachedTone = p.tone; cachedLow = p.lowCut;
+        const double hz = 20.0 * std::pow (30.0, (double) juce::jlimit (0.0f, 1.0f, p.lowCut));
+        for (auto& f : outHp) f.highpass (sr, hz, 0.707);
+        for (auto& f : outShelf) f.highShelf (sr, 5000.0, 0.7, p.tone == 0 ? 4.0 : (p.tone == 2 ? -5.0 : 0.0));
+    }
+    double sr = 48000.0; float k = 1.6f, lfo = 0.0f, bw = 0.0f, fbL = 0.0f, fbR = 0.0f; float lpState[2] { 0, 0 };
+    std::array<Allpass, 4> inAp; std::array<Allpass, 2> apMod, ap2; std::array<DLine, 2> dl1, dl2;
+    std::array<Biquad, 2> outHp, outShelf; int cachedTone = -1; float cachedLow = -1.0f;
+};
+
+//==============================================================================
+//  REVERB STAGE: pre-delay, then the Spring or Plate engine, then the mix.
+//==============================================================================
+class ReverbStage
+{
+public:
+    struct Params
+    {
+        int type = 0; float preMs = 20.0f, decay = 0.4f, mix = 0.0f;
+        SpringEngine::Params spring; PlateEngine::Params plate;
+    };
+
+    void prepare (double sampleRate)
+    {
+        sr = sampleRate;
+        preSize = (int) (sampleRate * 0.13) + 8;
+        for (auto& b : pre) b.assign ((size_t) preSize, 0.0f);
+        spring.prepare (sr); plate.prepare (sr);
+        reset();
+    }
+    void reset()
+    {
         for (auto& b : pre) std::fill (b.begin(), b.end(), 0.0f);
-        preWrite = 0; cachedType = -1;
-        for (auto& a : ap) for (auto& s : a) s = 0.0f;
-        for (auto& f : inHp) f.reset(); for (auto& f : inLp) f.reset();
-        for (auto& f : outLp) f.reset(); for (auto& f : outShelf) f.reset(); for (auto& f : outHp) f.reset();
+        preWrite = 0; spring.reset(); plate.reset();
         mixS.setCurrentAndTargetValue (0.0f); first = true;
     }
 
     void process (float* l, float* r, int n, const Params& p)
     {
-        if (p.type != cachedType) retune (p.type);
         if (first) { mixS.reset (sr, 0.03); mixS.setCurrentAndTargetValue (p.mix); first = false; }
         mixS.setTargetValue (p.mix);
-        if ((int) wl.size() < n) { wl.assign ((size_t) n, 0.0f); wr.assign ((size_t) n, 0.0f); }
-
-        // decay knob -> room size / damping per type
-        juce::Reverb::Parameters rp;
-        const float d = juce::jlimit (0.0f, 1.0f, p.decay);
-        switch (p.type)
-        {
-            case 0: rp.roomSize = 0.30f + 0.40f * d; rp.damping = 0.55f; break;           // spring
-            case 1: rp.roomSize = 0.55f + 0.38f * d; rp.damping = 0.18f; break;           // plate
-            case 2: rp.roomSize = 0.70f + 0.29f * d; rp.damping = 0.38f; break;           // hall
-            case 3: rp.roomSize = 0.15f + 0.40f * d; rp.damping = 0.50f; break;           // room
-            default: rp.roomSize = 0.72f + 0.27f * d; rp.damping = 0.82f; break;          // dub
-        }
-        rp.wetLevel = 0.33f; rp.dryLevel = 0.0f; rp.width = 1.0f; rp.freezeMode = 0.0f;
-        rev.setParameters (rp);
-
+        if ((int) wl.size() < n) { for (auto* v : { &wl, &wr, &xl, &xr }) v->assign ((size_t) n, 0.0f); }
         const int preSamples = juce::jlimit (0, preSize - 2, (int) (p.preMs * 0.001f * (float) sr));
         float* io[2] { l, r };
-        float* w[2] { wl.data(), wr.data() };
+        float* x[2] { xl.data(), xr.data() };
         for (int i = 0; i < n; ++i)
         {
             for (int c = 0; c < 2; ++c)
@@ -750,51 +1009,28 @@ public:
                 auto& b = pre[(size_t) c];
                 b[(size_t) preWrite] = io[c][i];
                 int rd = preWrite - preSamples; if (rd < 0) rd += preSize;
-                float x = b[(size_t) rd];
-                x = inLp[(size_t) c].process (inHp[(size_t) c].process (x));
-                if (p.type == 0)                                  // spring: dispersive chain gives the "boing"
-                    for (int s = 0; s < kApStages; ++s)
-                    {
-                        const float g = 0.62f, y = -g * x + ap[(size_t) c][(size_t) s];
-                        ap[(size_t) c][(size_t) s] = x + g * y;
-                        x = y;
-                    }
-                w[c][i] = x;
+                x[c][i] = b[(size_t) rd];
             }
             if (++preWrite >= preSize) preWrite = 0;
         }
-        rev.processStereo (w[0], w[1], n);
+        auto sp = p.spring; sp.decay = p.decay;
+        auto pl = p.plate;  pl.decay = p.decay;
+        if (p.type == 0) spring.process (xl.data(), xr.data(), wl.data(), wr.data(), n, sp);
+        else             plate.process (xl.data(), xr.data(), wl.data(), wr.data(), n, pl);
         for (int i = 0; i < n; ++i)
         {
             const float m = mixS.getNextValue();
-            for (int c = 0; c < 2; ++c)
-            {
-                const float x = outShelf[(size_t) c].process (outLp[(size_t) c].process (outHp[(size_t) c].process (w[c][i])));
-                io[c][i] = io[c][i] * (1.0f - m * m) + x * m * 1.4f;
-            }
+            io[0][i] = io[0][i] * (1.0f - m * m) + wl[(size_t) i] * m * wetGain;
+            io[1][i] = io[1][i] * (1.0f - m * m) + wr[(size_t) i] * m * wetGain;
         }
     }
 
 private:
-    static constexpr int kApStages = 16;
-    void retune (int type)
-    {
-        cachedType = type;
-        for (int c = 0; c < 2; ++c)
-        {
-            inHp[(size_t) c].highpass (sr, type == 1 ? 180.0 : (type == 0 ? 220.0 : 90.0), 0.707);
-            inLp[(size_t) c].lowpass (sr, type == 4 ? 4200.0 : (type == 0 ? 4800.0 : 12000.0), 0.707);
-            outHp[(size_t) c].highpass (sr, type == 4 ? 120.0 : 60.0, 0.707);
-            outLp[(size_t) c].lowpass (sr, type == 4 ? 3200.0 : (type == 0 ? 5200.0 : 14000.0), 0.707);
-            outShelf[(size_t) c].highShelf (sr, 5000.0, 0.707, type == 1 ? 3.0 : (type == 4 ? -3.0 : 0.0));
-        }
-    }
-    double sr = 48000.0; int preSize = 0, preWrite = 0, cachedType = -1; bool first = true;
-    juce::Reverb rev;
+    static constexpr float wetGain = 1.0f;
+    double sr = 48000.0; int preSize = 0, preWrite = 0; bool first = true;
+    SpringEngine spring; PlateEngine plate;
     std::array<std::vector<float>, 2> pre;
-    std::vector<float> wl, wr;
-    std::array<std::array<float, kApStages>, 2> ap {};
-    std::array<Biquad, 2> inHp, inLp, outHp, outLp, outShelf;
+    std::vector<float> wl, wr, xl, xr;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mixS;
 };
 
@@ -892,6 +1128,303 @@ private:
 //     mids/highs (WEIGHT), so the fundamental keeps its body
 //   * automatic make-up matches the long-term loudness of input and output
 //==============================================================================
+// Sub-band control (30-50 Hz) with optional harmonics that carry the note on small speakers.
+class SubStage
+{
+public:
+    struct Params { float levelDb = 0.0f, harm = 0.0f; };
+    void prepare (double sampleRate)
+    {
+        sr = sampleRate;
+        for (int c = 0; c < 2; ++c)
+        {
+            hp1[c].highpass (sr, 30.0, 0.707); lp1[c].lowpass (sr, 50.0, 0.707);
+            hp2[c].highpass (sr, 30.0, 0.707); lp2[c].lowpass (sr, 50.0, 0.707);
+            hh[c].highpass (sr, 90.0, 0.707); hl[c].lowpass (sr, 600.0, 0.707);
+        }
+        reset();
+    }
+    void reset() { for (int c = 0; c < 2; ++c) { hp1[c].reset(); lp1[c].reset(); hp2[c].reset(); lp2[c].reset(); hh[c].reset(); hl[c].reset(); } level = 0.0f; }
+    // returns nothing; the sub-band peak is available from getLevel()
+    void process (float* l, float* r, int n, const Params& p)
+    {
+        const float g = std::pow (10.0f, p.levelDb / 20.0f) - 1.0f;
+        const float cd = std::exp (-1.0f / (0.060f * (float) sr));
+        float* ch[2] { l, r };
+        for (int i = 0; i < n; ++i)
+            for (int c = 0; c < 2; ++c)
+            {
+                const float x = ch[c][i];
+                const float b = lp2[c].process (lp1[c].process (hp2[c].process (hp1[c].process (x))));
+                level = std::max (std::abs (b), level * cd);
+                float y = x + g * 1.85f * b;      // 1.85 makes the band path unity gain at 40 Hz
+                if (p.harm > 0.001f)
+                {
+                    const float h = hl[c].process (hh[c].process (std::tanh (8.0f * b) * 0.25f));
+                    y += p.harm * h;
+                }
+                ch[c][i] = y;
+            }
+    }
+    float getLevel() const noexcept { return level; }
+private:
+    double sr = 44100.0; float level = 0.0f;
+    Biquad hp1[2], lp1[2], hp2[2], lp2[2], hh[2], hl[2];
+};
+
+// Monitor-only small-speaker simulation (phone, laptop, MacBook, studio monitor). Never used when exporting.
+class SpeakerCheck
+{
+public:
+    void prepare (double sampleRate) { sr = sampleRate; mode = -1; }
+    void reset() { for (auto& b : f) for (auto& q : b) q.reset(); }
+    void process (float* l, float* r, int n, int m, float levelDb)
+    {
+        if (m != mode)
+        {
+            mode = m; reset();
+            for (int c = 0; c < 2; ++c)
+            {
+                for (auto& q : f[c]) q.setIdentity();
+                switch (m)
+                {
+                    case 1: f[c][0].highpass (sr, 420, 0.8); f[c][1].highpass (sr, 420, 0.8); f[c][2].lowpass (sr, 7500, 0.7); f[c][3].peak (sr, 1800, 1.0, 4.0); break;
+                    case 2: f[c][0].highpass (sr, 200, 0.75); f[c][1].highpass (sr, 200, 0.75); f[c][2].lowpass (sr, 14000, 0.7); f[c][3].peak (sr, 2400, 0.9, 2.5); break;
+                    case 3: f[c][0].highpass (sr, 90, 0.7); f[c][1].highpass (sr, 90, 0.7); f[c][2].lowpass (sr, 18000, 0.7); f[c][3].peak (sr, 250, 0.8, 1.5); break;
+                    case 4: f[c][0].highpass (sr, 38, 0.7); break;
+                    default: break;
+                }
+            }
+        }
+        if (m <= 0) return;
+        const float g = std::pow (10.0f, levelDb / 20.0f);
+        for (int i = 0; i < n; ++i)
+        {
+            float a = l[i], b = r[i];
+            if (m <= 2) a = b = 0.5f * (a + b);          // phone / laptop: one small speaker
+            for (auto& q : f[0]) a = q.process (a);
+            for (auto& q : f[1]) b = q.process (b);
+            l[i] = a * g; r[i] = b * g;
+        }
+    }
+private:
+    double sr = 44100.0; int mode = -1;
+    Biquad f[2][4];
+};
+
+// Per-drum voicing (Kick, Snare, Rim, Hat, Toms; Loop leaves the sound alone) and the kick/bass EQ lock.
+class DrumVoice
+{
+public:
+    void prepare (double sampleRate) { sr = sampleRate; vType = -2; lockKey = -1.0f; reset(); }
+    void reset() { for (auto& c : v) for (auto& q : c) q.reset(); for (auto& c : k) for (auto& q : c) q.reset(); }
+    void voice (float* l, float* r, int n, int type)
+    {
+        type = juce::jlimit (0, 5, type);
+        if (type != vType)
+        {
+            vType = type;
+            for (int c = 0; c < 2; ++c)
+            {
+                for (auto& q : v[c]) q.setIdentity();
+                auto& f = v[c];
+                switch (type)
+                {
+                    case 0: f[0].highpass (sr, 35, 0.7); f[1].lowShelf (sr, 70, 0.7, 2.5); f[2].peak (sr, 350, 1.0, -2.5); f[3].peak (sr, 3500, 1.0, 1.5); break;
+                    case 1: f[0].highpass (sr, 70, 0.7); f[1].peak (sr, 200, 1.0, 2.0); f[2].peak (sr, 4500, 0.9, 3.0); f[3].peak (sr, 500, 1.0, -1.5); break;
+                    case 2: f[0].highpass (sr, 200, 0.7); f[1].peak (sr, 1800, 1.0, 3.0); f[2].lowpass (sr, 9000, 0.7); break;
+                    case 3: f[0].highpass (sr, 400, 0.7); f[1].peak (sr, 3500, 1.0, -2.5); f[2].highShelf (sr, 10000, 0.7, 1.5); break;
+                    case 4: f[0].highpass (sr, 50, 0.7); f[1].peak (sr, 120, 1.0, 3.0); f[2].peak (sr, 400, 1.0, -2.0); break;
+                    default: break;
+                }
+            }
+        }
+        if (type == 5) return;
+        for (int i = 0; i < n; ++i)
+        {
+            float a = l[i], b = r[i];
+            for (auto& q : v[0]) a = q.process (a);
+            for (auto& q : v[1]) b = q.process (b);
+            l[i] = a; r[i] = b;
+        }
+    }
+    // Makes room for the bass: dips the drums under about 100 Hz and keeps the kick's knock just above it.
+    void lock (float* l, float* r, int n, float amount)
+    {
+        if (std::abs (amount - lockKey) > 0.002f)
+        {
+            lockKey = amount;
+            for (int c = 0; c < 2; ++c) { k[c][0].lowShelf (sr, 100, 0.7, -7.0 * amount); k[c][1].peak (sr, 125, 1.2, 2.0 * amount); }
+        }
+        for (int i = 0; i < n; ++i)
+        {
+            float a = l[i], b = r[i];
+            for (auto& q : k[0]) a = q.process (a);
+            for (auto& q : k[1]) b = q.process (b);
+            l[i] = a; r[i] = b;
+        }
+    }
+private:
+    double sr = 44100.0; int vType = -2; float lockKey = -1.0f;
+    Biquad v[2][4], k[2][2];
+};
+
+// Control-room listening: monitor voicing, room, speaker position, colour, mono, headphone crossfeed.
+// A mixing aid only: it approximates the character of listening setups, it does not model a particular speaker or room.
+class ControlRoom
+{
+public:
+    struct Params { int mon = 0, room = 1; float angle = 60.0f, dist = 2.4f, toe = 0.5f, colour = 0.35f, levelDb = 0.0f; bool mono = false, phones = false; };
+    void prepare (double sampleRate) { sr = sampleRate; plate.prepare (sr); bufL.assign (512, 0.0f); bufR.assign (512, 0.0f); wetL.assign (512, 0.0f); wetR.assign (512, 0.0f); preL.assign ((size_t) (sr * 0.05) + 8, 0.0f); preR = preL; wp = 0; key = -1; reset(); }
+    void reset()
+    {
+        plate.reset();
+        for (auto& c : mf) for (auto& q : c) q.reset();
+        for (auto& c : col) for (auto& q : c) q.reset();
+        for (auto& q : air) q.reset(); for (auto& q : toeF) q.reset();
+        xl = xr = 0.0f; std::fill (preL.begin(), preL.end(), 0.0f); std::fill (preR.begin(), preR.end(), 0.0f); wp = 0;
+        for (auto& q : xf) q.reset(); xd[0] = xd[1] = 0; xHist[0].fill (0.0f); xHist[1].fill (0.0f);
+    }
+    void process (float* l, float* r, int n, const Params& p)
+    {
+        if (p.mon <= 0) return;
+        const int mk = p.mon * 1000 + (int) std::lround (p.colour * 100) * 7 + (int) std::lround (p.dist * 10) * 131 + (int) std::lround (p.toe * 100) * 17;
+        if (mk != key) { key = mk; configure (p); }
+        const float sideG = juce::jlimit (0.3f, 1.6f, p.angle / 60.0f);
+        const float lvl = std::pow (10.0f, p.levelDb / 20.0f);
+        static const float roomAmt[3] { 0.05f, 0.11f, 0.20f };
+        static const float roomDec[3] { 0.20f, 0.38f, 0.66f };
+        const float wet = roomAmt[juce::jlimit (0, 2, p.room)] * juce::jlimit (0.4f, 1.6f, 0.45f + 0.23f * p.dist);
+        PlateEngine::Params pp; pp.decay = roomDec[juce::jlimit (0, 2, p.room)]; pp.damp = 0.65f; pp.lowCut = 0.30f; pp.width = 1.0f; pp.tone = 1;
+        const int pre = juce::jlimit (1, (int) preL.size() - 1, (int) (p.dist / 343.0f * (float) sr * 0.6f));
+        for (int base = 0; base < n; base += 512)
+        {
+            const int m = juce::jmin (512, n - base);
+            for (int i = 0; i < m; ++i)
+            {
+                float a = l[base + i], b = r[base + i];
+                const float mid = 0.5f * (a + b), side = 0.5f * (a - b) * sideG;
+                a = mid + side; b = mid - side;
+                for (auto& q : toeF) { a = q.process (a); }
+                b = toeB.process (b);
+                for (auto& q : mf[0]) a = q.process (a);
+                for (auto& q : mf[1]) b = q.process (b);
+                a = air[0].process (a); b = air[1].process (b);
+                if (p.colour > 0.001f)
+                {
+                    for (auto& q : col[0]) a = q.process (a);
+                    for (auto& q : col[1]) b = q.process (b);
+                    const float s = 0.15f + 0.5f * p.colour;
+                    a = a + p.colour * (softSat (a, s) - a); b = b + p.colour * (softSat (b, s) - b);
+                }
+                bufL[(size_t) i] = a; bufR[(size_t) i] = b;
+                // pre-delayed feed for the room
+                preL[(size_t) wp] = a; preR[(size_t) wp] = b;
+                const size_t rp_ = (size_t) ((wp + (int) preL.size() - pre) % (int) preL.size());
+                dL[(size_t) i] = preL[rp_]; dR[(size_t) i] = preR[rp_];
+                wp = (wp + 1) % (int) preL.size();
+            }
+            plate.process (dL, dR, wetL.data(), wetR.data(), m, pp);
+            for (int i = 0; i < m; ++i)
+            {
+                float a = bufL[(size_t) i] + wet * wetL[(size_t) i], b = bufR[(size_t) i] + wet * wetR[(size_t) i];
+                if (p.phones)
+                {
+                    // crossfeed: a little low-passed, slightly delayed signal from the other ear
+                    const float ca = xf[0].process (xHist[1][(size_t) xd[1]]), cb = xf[1].process (xHist[0][(size_t) xd[0]]);
+                    xHist[0][(size_t) xd[0]] = a; xHist[1][(size_t) xd[1]] = b; xd[0] = (xd[0] + 1) % 12; xd[1] = (xd[1] + 1) % 12;
+                    a = (a + 0.38f * ca) / 1.15f; b = (b + 0.38f * cb) / 1.15f;
+                }
+                if (p.mono) a = b = 0.5f * (a + b);
+                l[base + i] = a * lvl; r[base + i] = b * lvl;
+            }
+        }
+    }
+private:
+    void configure (const Params& p)
+    {
+        for (auto& c : mf) for (auto& q : c) q.setIdentity();
+        for (int c = 0; c < 2; ++c)
+        {
+            auto& f = mf[c];
+            switch (p.mon)
+            {
+                case 1: f[0].highpass (sr, 55, 0.75); f[1].highpass (sr, 55, 0.75); f[2].peak (sr, 3000, 0.9, 1.5); f[3].lowpass (sr, 19000, 0.7); break;
+                case 2: f[0].highpass (sr, 40, 0.7); f[1].highpass (sr, 40, 0.7); f[2].peak (sr, 220, 0.8, 1.0); f[3].highShelf (sr, 9000, 0.7, -0.8); break;
+                default: f[0].highpass (sr, 28, 0.7); f[1].lowShelf (sr, 80, 0.7, 2.0); f[2].highShelf (sr, 10000, 0.7, -1.5); break;
+            }
+            col[c][0].lowShelf (sr, 100, 0.7, 2.0 * p.colour); col[c][1].highShelf (sr, 9000, 0.7, -2.5 * p.colour);
+            air[c].lowpass (sr, juce::jlimit (4000.0, 20000.0, 22000.0 / (1.0 + 0.30 * p.dist)), 0.6);
+            xf[c].lowpass (sr, 700, 0.7);
+        }
+        const double toeDb = (p.toe - 0.5) * 6.0;
+        for (auto& q : toeF) q.highShelf (sr, 5000, 0.7, toeDb);
+        toeB.highShelf (sr, 5000, 0.7, toeDb);
+    }
+    double sr = 44100.0; int key = -1, wp = 0; int xd[2] { 0, 0 };
+    PlateEngine plate;
+    Biquad mf[2][4], col[2][2], air[2], toeF[1], toeB, xf[2];
+    std::array<float, 12> xHist[2];
+    float xl = 0, xr = 0;
+    std::vector<float> bufL, bufR, wetL, wetR, preL, preR;
+    float dL[512] {}, dR[512] {};
+};
+
+// Shared, process-wide note of how much low end the Bass tab is playing right now. A Drums tab running in
+// the same host can listen to it when no sidechain signal is routed in. Blocks are published whole, so it
+// can lag the bass by up to one block.
+struct BassBus
+{
+    static std::atomic<float>& level() { static std::atomic<float> v { 0.0f }; return v; }
+    static std::atomic<juce::uint32>& stamp() { static std::atomic<juce::uint32> v { 0 }; return v; }
+    static bool fresh() { return juce::Time::getMillisecondCounter() - stamp().load() < 400u; }
+};
+
+// Sidechain version of the kick/bass lock: a low shelf (under ~100 Hz) on the drums that is pulled down while the bass plays.
+class SidechainLock
+{
+public:
+    void prepare (double sampleRate)
+    {
+        sr = sampleRate;
+        det[0].lowpass (sr, 120, 0.707); det[1].lowpass (sr, 120, 0.707);
+        aC = std::exp (-1.0f / (0.005f * (float) sr)); rC = std::exp (-1.0f / (0.150f * (float) sr)); gC = std::exp (-16.0f / (0.012f * (float) sr));
+        reset();
+    }
+    void reset() { for (auto& q : shelf) q.setIdentity(), q.reset(); for (auto& q : det) q.reset(); env = 0.0f; redDb = 0.0f; cnt = 0; }
+    // scL/scR: sample-accurate sidechain (may be null). Otherwise fixedLevel (linear, held for the block) drives the detector.
+    // Returns the largest reduction in dB applied in this block.
+    float process (float* l, float* r, int n, float amount, const float* scL, const float* scR, float fixedLevel)
+    {
+        const float depth = 14.0f * juce::jlimit (0.0f, 1.0f, amount);
+        float worst = 0.0f;
+        for (int i = 0; i < n; ++i)
+        {
+            float x;
+            if (scL != nullptr) { const float m = 0.5f * (scL[i] + (scR != nullptr ? scR[i] : scL[i])); x = std::abs (det[1].process (det[0].process (m))); }
+            else x = fixedLevel;
+            env = x > env ? x + (env - x) * aC : x + (env - x) * rC;
+            if (++cnt >= 16)
+            {
+                cnt = 0;
+                const float envDb = 20.0f * std::log10 (env + 1.0e-9f);
+                const float target = depth * juce::jlimit (0.0f, 1.0f, (envDb + 48.0f) / 26.0f);
+                redDb = target + (redDb - target) * gC;
+                Biquad t;
+                if (redDb > 0.05f) t.lowShelf (sr, 100.0, 0.7, -redDb); else t.setIdentity();
+                for (auto& q : shelf) { q.b0 = t.b0; q.b1 = t.b1; q.b2 = t.b2; q.a1 = t.a1; q.a2 = t.a2; }
+            }
+            l[i] = shelf[0].process (l[i]);
+            r[i] = shelf[1].process (r[i]);
+            worst = std::max (worst, redDb);
+        }
+        return worst;
+    }
+private:
+    double sr = 44100.0; float aC = 0, rC = 0, gC = 0, env = 0, redDb = 0; int cnt = 0;
+    Biquad shelf[2], det[2];
+};
+
 class SteadyBass
 {
 public:

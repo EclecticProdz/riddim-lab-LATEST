@@ -6,7 +6,8 @@ using namespace rp;
 RiddimLabAudioProcessor::RiddimLabAudioProcessor()
     : AudioProcessor (BusesProperties()
         .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+        .withInput  ("Sidechain", juce::AudioChannelSet::stereo(), false)),
       parameters (*this, nullptr, "PARAMETERS", createParameterLayout())
 {
     for (int s = 0; s < NumSec; ++s)
@@ -74,7 +75,7 @@ void RiddimLabAudioProcessor::prepareToPlay (double sampleRate, int)
 {
     sr = sampleRate;
     L.assign ((size_t) kChunk, 0.0f); R.assign ((size_t) kChunk, 0.0f);
-    source.prepare (sr); comp.prepare (sr); steady.prepare (sr); eq.prepare (sr); tape.prepare (sr);
+    source.prepare (sr); comp.prepare (sr); steady.prepare (sr); sub.prepare (sr); spk.prepare (sr); ctl.prepare (sr); drumVoice.prepare (sr); scLock.prepare (sr); for (auto& q : busLp) { q.lowpass (sr, 150.0, 0.707); q.reset(); } eq.prepare (sr); tape.prepare (sr);
     echo.prepare (sr, kChunk); delay.prepare (sr, kChunk); mod.prepare (sr, kChunk);
     reverb.prepare (sr); limiter.prepare (sr);
     for (int c = 0; c < 2; ++c)
@@ -93,7 +94,13 @@ bool RiddimLabAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts
 {
     const auto in = layouts.getMainInputChannelSet();
     const auto out = layouts.getMainOutputChannelSet();
-    return in == out && (out == juce::AudioChannelSet::mono() || out == juce::AudioChannelSet::stereo());
+    if (! (in == out && (out == juce::AudioChannelSet::mono() || out == juce::AudioChannelSet::stereo()))) return false;
+    if (layouts.inputBuses.size() > 1)
+    {
+        const auto sc = layouts.getChannelSet (true, 1);
+        if (! sc.isDisabled() && sc != juce::AudioChannelSet::mono() && sc != juce::AudioChannelSet::stereo()) return false;
+    }
+    return true;
 }
 
 void RiddimLabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -113,6 +120,13 @@ void RiddimLabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     const int gMode = juce::jlimit (0, 2, juce::roundToInt (pGuitarMode->load()));
     const bool bypass = pBypass->load() > 0.5f, thr = pThrow->load() > 0.5f, panic = pPanic->load() > 0.5f;
 
+    // optional host sidechain input (second input bus)
+    juce::AudioBuffer<float> scBuf;
+    bool scOn = false;
+    if (getBusCount (true) > 1)
+        if (auto* sb = getBus (true, 1))
+            if (sb->isEnabled() && sb->getNumberOfChannels() > 0) { scBuf = getBusBuffer (buffer, true, 1); scOn = scBuf.getNumChannels() > 0 && scBuf.getNumSamples() >= total; }
+
     float ip[2] { 0, 0 }, op[2] { 0, 0 }, cg = 0, lg = 0;
     for (int start = 0; start < total; start += kChunk)
     {
@@ -122,7 +136,8 @@ void RiddimLabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             L[(size_t) i] = buffer.getSample (0, start + i);
             R[(size_t) i] = channels > 1 ? buffer.getSample (1, start + i) : L[(size_t) i];
         }
-        runChunk (L.data(), R.data(), n, sec, bypass, thr, panic, bpm, gMode);
+        runChunk (L.data(), R.data(), n, sec, bypass, thr, panic, bpm, gMode,
+                  scOn ? scBuf.getReadPointer (0) + start : nullptr, scOn ? scBuf.getReadPointer (juce::jmin (1, scBuf.getNumChannels() - 1)) + start : nullptr);
         for (int i = 0; i < n; ++i)
         {
             buffer.setSample (0, start + i, L[(size_t) i]);
@@ -139,7 +154,7 @@ void RiddimLabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     }
 }
 
-void RiddimLabAudioProcessor::runChunk (float* l, float* r, int n, int sec, bool bypass, bool throwOn, bool panic, double bpm, int gMode)
+void RiddimLabAudioProcessor::runChunk (float* l, float* r, int n, int sec, bool bypass, bool throwOn, bool panic, double bpm, int gMode, const float* scL, const float* scR)
 {
     const Sec s = (Sec) sec;
     const auto g = [&] (P p) { return raw (s, p); };
@@ -175,6 +190,8 @@ void RiddimLabAudioProcessor::runChunk (float* l, float* r, int n, int sec, bool
         for (int i = 0; i < 3; ++i) k[i] = g (sourceParam (s, gMode, i));
         source.process (l, r, n, s == Keys ? (int) Drums : sec, gMode, k);   // Piano Bang reuses the transient voicing
     }
+
+    if (s == Drums) drumVoice.voice (l, r, n, juce::roundToInt (g (DrumType)));
 
     // --- SteadyBass (Bass tab) ----------------------------------------------
     float sbGr = 0.0f;
@@ -216,11 +233,40 @@ void RiddimLabAudioProcessor::runChunk (float* l, float* r, int n, int sec, bool
     // --- tone EQ ------------------------------------------------------------
     if (g (EqOn) > 0.5f) { eq.set (g (EqLow), g (EqMid), g (EqHigh), g (EqPres)); eq.process (l, r, n); }
 
+    if (s == Drums)
+    {
+        const int lockMode = juce::roundToInt (g (LockOn));
+        if (lockMode == 1) drumVoice.lock (l, r, n, g (LockAmt));
+        else if (lockMode == 2)
+        {
+            if (scL != nullptr) { scState.store (1); scLock.process (l, r, n, g (LockAmt), scL, scR, 0.0f); }
+            else if (riddim::BassBus::fresh()) { scState.store (2); scLock.process (l, r, n, g (LockAmt), nullptr, nullptr, riddim::BassBus::level().load()); }
+            else { scState.store (0); scLock.reset(); }
+        }
+        else scLock.reset();
+    }
+    else if (s == Bass)
+    {
+        // let a Drums tab in this host hear what the bass is doing
+        float pk = 0.0f;
+        for (int i = 0; i < n; ++i) pk = juce::jmax (pk, std::abs (busLp[1].process (busLp[0].process (0.5f * (l[i] + r[i])))));
+        riddim::BassBus::level().store (pk); riddim::BassBus::stamp().store (juce::Time::getMillisecondCounter());
+    }
+
+    // --- sub band (Bass tab) ---------------------------------------------------
+    if (s == Bass)
+    {
+        riddim::SubStage::Params sb; sb.levelDb = g (SubLevel); sb.harm = g (SubHarm);
+        sub.process (l, r, n, sb);
+        subLvl.store (sub.getLevel());
+    }
+
     // --- tape (always in the path so that reported latency is constant) -----
     {
         riddim::TapeStage::Params tp;
         tp.on = g (TapeOn) > 0.5f; tp.sat = g (TapeSat); tp.tone = g (TapeTone);
         tp.wow = g (Wow); tp.flutter = g (Flutter); tp.wear = g (Wear); tp.type = juce::roundToInt (g (TapeType));
+        tp.speed = juce::jlimit (0, 2, juce::roundToInt (g (TapeSpeed))); tp.stab = g (TapeStab); tp.mix = g (TapeMix);
         tape.process (l, r, n, tp);
     }
 
@@ -238,6 +284,9 @@ void RiddimLabAudioProcessor::runChunk (float* l, float* r, int n, int sec, bool
         ep.feedback = throwOn ? juce::jmin (0.94f, g (Feedback) + 0.22f) : g (Feedback);
         ep.mix = g (Mix); ep.heat = g (Heat); ep.damping = g (Damping);
         ep.type = juce::roundToInt (g (EchoType));
+        ep.heads[0] = g (Head1) > 0.5f; ep.heads[1] = g (Head2) > 0.5f; ep.heads[2] = g (Head3) > 0.5f;
+        if (! (ep.heads[0] || ep.heads[1] || ep.heads[2])) ep.heads[0] = true;
+        ep.revLoop = g (EchoRev);
         ep.panic = panic;
         if (filtOn && route == 0) { ep.cutoff = cutoff; ep.resonance = res; ep.filterMode = fmode; }
         else { ep.cutoff = 18000.0f; ep.resonance = 0.1f; ep.filterMode = 0; }
@@ -276,6 +325,9 @@ void RiddimLabAudioProcessor::runChunk (float* l, float* r, int n, int sec, bool
     {
         riddim::ReverbStage::Params rv;
         rv.type = juce::roundToInt (g (RevType)); rv.preMs = g (RevPre); rv.decay = g (RevDecay); rv.mix = g (RevMix);
+        rv.spring.character = juce::roundToInt (g (SpChar)); rv.spring.length = juce::roundToInt (g (SpLen)); rv.spring.drive = g (SpDrive);
+        rv.spring.fb = g (SpFb); rv.spring.treble = g (SpTreble); rv.spring.bass = g (SpBass); rv.spring.mono = juce::roundToInt (g (SpStereo)) == 1;
+        rv.plate.damp = g (PlDamp); rv.plate.lowCut = g (PlLowCut); rv.plate.width = g (PlWidth); rv.plate.tone = juce::roundToInt (g (PlTone));
         reverb.process (l, r, n, rv);
     }
     else if (revWasOn) reverb.reset();
@@ -305,6 +357,19 @@ void RiddimLabAudioProcessor::runChunk (float* l, float* r, int n, int sec, bool
         lgr = limiter.process (l, r, n, lp);
     }
     limGr.store (lgr);
+
+    // --- speaker check: listening aid only, never applied to an offline bounce
+    if (s == Bass && ! isNonRealtime()) spk.process (l, r, n, juce::roundToInt (g (SpkMode)), g (SpkLevel));
+
+    // --- control-room listening (global settings live on the Master profile); never applied to an offline bounce
+    if (! isNonRealtime())
+    {
+        riddim::ControlRoom::Params cp;
+        cp.mon = juce::roundToInt (raw (Master, CtlMon)); cp.room = juce::roundToInt (raw (Master, CtlRoom));
+        cp.angle = raw (Master, CtlWidth); cp.dist = raw (Master, CtlDist); cp.toe = raw (Master, CtlToe); cp.colour = raw (Master, CtlColour);
+        cp.levelDb = raw (Master, CtlLevel); cp.mono = raw (Master, CtlMono) > 0.5f; cp.phones = raw (Master, CtlPhones) > 0.5f;
+        ctl.process (l, r, n, cp);
+    }
 }
 
 juce::AudioProcessorEditor* RiddimLabAudioProcessor::createEditor()

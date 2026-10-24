@@ -41,6 +41,9 @@ public:
     float getOutputPeak (int ch) const noexcept { return outPeak[juce::jlimit (0, 1, ch)].load(); }
     float getCompGainReductionDb() const noexcept    { return compGr.load(); }
     float getLimiterGainReductionDb() const noexcept { return limGr.load(); }
+    float getSubLevel() const noexcept { return subLvl.load(); }
+    // where the sidechain lock is listening: 0 nothing found, 1 host sidechain input, 2 Bass tab in this host
+    int getSidechainState() const noexcept { return scState.load(); }
 
     // The id of a parameter for a given profile (tab).
     static juce::String paramId (rp::Sec s, rp::P p) { return rp::id (s, p); }
@@ -48,7 +51,7 @@ public:
 private:
     static APVTS::ParameterLayout createParameterLayout();
     float raw (rp::Sec s, rp::P p) const noexcept;
-    void runChunk (float* l, float* r, int n, int sec, bool bypass, bool throwOn, bool panic, double bpm, int guitarMode);
+    void runChunk (float* l, float* r, int n, int sec, bool bypass, bool throwOn, bool panic, double bpm, int guitarMode, const float* scL = nullptr, const float* scR = nullptr);
 
     static constexpr int kChunk = 512;
     double sr = 44100.0;
@@ -60,6 +63,13 @@ private:
     riddim::SourceStage source;
     riddim::Compressor comp;
     riddim::SteadyBass steady;
+    riddim::SubStage sub;
+    riddim::DrumVoice drumVoice;
+    riddim::SidechainLock scLock;
+    riddim::Biquad busLp[2];
+    std::atomic<int> scState { 0 };
+    riddim::SpeakerCheck spk;
+    riddim::ControlRoom ctl;
     riddim::ToneEQ eq;
     riddim::TapeStage tape;
     riddim::DubEcho echo;
@@ -75,7 +85,7 @@ private:
     bool primed = false;
     float ipk[2] { 0.0f, 0.0f };
 
-    std::atomic<float> inPeak[2] { 0.0f, 0.0f }, outPeak[2] { 0.0f, 0.0f }, compGr { 0.0f }, limGr { 0.0f };
+    std::atomic<float> inPeak[2] { 0.0f, 0.0f }, outPeak[2] { 0.0f, 0.0f }, compGr { 0.0f }, limGr { 0.0f }, subLvl { 0.0f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RiddimLabAudioProcessor)
 };

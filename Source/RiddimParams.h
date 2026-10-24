@@ -35,6 +35,13 @@ enum P
     LimOn, LimThresh, LimRelease, LimCeiling, LimSoft,
     SrcOn, Src1, Src2, Src3, Src4, Src5, Src6, Src7, Src8, Src9,
     SbOn, SbAmount, SbPunch, SbWeight,
+    TapeSpeed, TapeStab, TapeMix,
+    SpChar, SpLen, SpDrive, SpFb, SpTreble, SpBass, SpStereo,
+    PlDamp, PlLowCut, PlWidth, PlTone,
+    Head1, Head2, Head3, EchoRev,
+    SubLevel, SubHarm, SpkMode, SpkLevel,
+    DrumType, LockOn, LockAmt,
+    CtlMon, CtlRoom, CtlWidth, CtlDist, CtlToe, CtlColour, CtlLevel, CtlMono, CtlPhones,
     NumP
 };
 
@@ -83,7 +90,7 @@ inline const Spec& spec (P p)
         { "wow",        "Wow",              KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
         { "flutter",    "Flutter",          KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
         { "wear",       "Tape Wear",        KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
-        { "tapeType",   "Tape Type",        KChoice, 0, 2, 1, 1, "Clean|Vintage|Worn", 0 },
+        { "tapeType",   "Tape Type",        KChoice, 0, 2, 1, 1, "Clean|Weight|Vintage", 0 },
 
         { "echoOn",     "Echo On",          KBool,   0, 1, 1, 1, nullptr, 0 },
         { "echoType",   "Echo Type",        KChoice, 0, 2, 1, 1, "Tape|Digital|Ping-pong", 0 },
@@ -135,6 +142,47 @@ inline const Spec& spec (P p)
         { "sbAmount",   "SteadyBass Amount",KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 4 },
         { "sbPunch",    "SteadyBass Punch", KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 4 },
         { "sbWeight",   "SteadyBass Weight",KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 4 },
+
+        { "tapeSpeed",  "Tape Speed",       KChoice, 0, 2, 1, 1, "7.5 IPS|15 IPS|30 IPS", 0 },
+        { "tapeStab",   "Tape Stability",   KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
+        { "tapeMix",    "Tape Mix",         KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
+
+        { "spChar",     "Spring Character", KChoice, 0, 6, 1, 1, "Drip|Roots|Twang|Heavy|Surf|Dark Tank|Shimmer", 0 },
+        { "spLen",      "Spring Length",    KChoice, 0, 2, 1, 1, "Short|Med|Long", 0 },
+        { "spDrive",    "Spring Drive",     KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
+        { "spFb",       "Spring Feedback",  KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
+        { "spTreble",   "Spring Treble",    KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
+        { "spBass",     "Spring Bass",      KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
+        { "spStereo",   "Spring Stereo",    KChoice, 0, 1, 1, 1, "Stereo|Mono", 0 },
+
+        { "plDamp",     "Plate Damping",    KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
+        { "plLowCut",   "Plate Low Cut",    KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
+        { "plWidth",    "Plate Width",      KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
+        { "plTone",     "Plate Tone",       KChoice, 0, 2, 1, 1, "Bright|Natural|Dark", 0 },
+
+        { "head1",      "Echo Head 1",      KBool,   0, 1, 1, 1, nullptr, 0 },
+        { "head2",      "Echo Head 2",      KBool,   0, 1, 1, 1, nullptr, 0 },
+        { "head3",      "Echo Head 3",      KBool,   0, 1, 1, 1, nullptr, 0 },
+        { "echoRev",    "Reverb In Loop",   KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 0 },
+
+        { "subLevel",   "Sub Level",        KFloat,  -12.0f, 12.0f, 0.1f, 1.0f, nullptr, 4 },
+        { "subHarm",    "Sub Harmonics",    KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 4 },
+        { "spkMode",    "Speaker Check",    KChoice, 0, 4, 1, 1, "Off|Phone|Laptop|MacBook|Monitor", 4 },
+        { "spkLevel",   "Speaker Check Level", KFloat, -12.0f, 12.0f, 0.1f, 1.0f, nullptr, 4 },
+
+        { "drumType",   "Drum Type",        KChoice, 0, 5, 1, 1, "Kick|Snare|Rim|Hat|Toms|Loop", 5 },
+        { "lockOn",     "Kick Bass Lock",   KChoice, 0, 2, 1, 1, "Off|EQ Lock|Sidechain", 5 },
+        { "lockAmt",    "Lock Amount",      KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 5 },
+
+        { "ctlMon",     "Listening Monitor", KChoice, 0, 3, 1, 1, "Off|Nearfield|Midfield|Main", 1 },
+        { "ctlRoom",    "Listening Room",   KChoice, 0, 2, 1, 1, "Studio|Control Room|Live Room", 1 },
+        { "ctlWidth",   "Speaker Angle",    KFloat,  20.0f, 90.0f, 1.0f, 1.0f, nullptr, 1 },
+        { "ctlDist",    "Listening Distance", KFloat, 0.5f, 6.0f, 0.1f, 1.0f, nullptr, 1 },
+        { "ctlToe",     "Speaker Toe-in",   KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 1 },
+        { "ctlColour",  "Analog Colour",    KFloat,  0.0f, 1.0f, 0.001f, 1.0f, nullptr, 1 },
+        { "ctlLevel",   "Listening Level",  KFloat,  -24.0f, 6.0f, 0.1f, 1.0f, nullptr, 1 },
+        { "ctlMono",    "Listening Mono",   KBool,   0, 1, 1, 1, nullptr, 1 },
+        { "ctlPhones",  "Listening Headphones", KBool, 0, 1, 1, 1, nullptr, 1 },
     }};
     return table[(size_t) p];
 }
@@ -147,8 +195,14 @@ inline bool exists (Sec s, P p)
     if (sc == 1) return s == Master;
     if (sc == 2) return s != Master;
     if (sc == 4) return s == Bass;
+    if (sc == 5) return s == Drums;
     return s == Guitar && (p >= Src4 && p <= Src9);   // guitar-only (Src1..3 exist for every instrument)
 }
+
+// Listening aids that must never be saved into presets.
+inline bool monitorOnly (P p) { return p == SpkMode || p == SpkLevel || (p >= CtlMon && p <= CtlPhones); }
+// Listening (Control tab) settings are global: they always live on the Master profile.
+inline bool isControl (P p) { return p >= CtlMon && p <= CtlPhones; }
 
 inline juce::String id (Sec s, P p)
 {
@@ -221,6 +275,36 @@ inline float defaultValue (Sec s, P p)
         case LimRelease: v = 120.0f; break;
         case LimCeiling: v = -0.3f; break;
         case LimSoft: v = 0.0f; break;
+        case TapeSpeed: v = 1.0f; break;
+        case TapeStab: v = 1.0f; break;
+        case TapeMix: v = 1.0f; break;
+        case SpChar: v = 1.0f; break;
+        case SpLen: v = 1.0f; break;
+        case SpDrive: v = 0.25f; break;
+        case SpFb: v = 0.30f; break;
+        case SpTreble: case SpBass: v = 0.5f; break;
+        case SpStereo: v = 0.0f; break;
+        case PlDamp: v = 0.40f; break;
+        case PlLowCut: v = 0.15f; break;
+        case PlWidth: v = 1.0f; break;
+        case PlTone: v = 1.0f; break;
+        case Head1: v = 1.0f; break;
+        case Head2: case Head3: v = 0.0f; break;
+        case EchoRev: v = 0.0f; break;
+        case SubLevel: v = 0.0f; break;
+        case SubHarm: v = 0.25f; break;
+        case SpkMode: v = 0.0f; break;
+        case SpkLevel: v = 0.0f; break;
+        case DrumType: v = 5.0f; break;
+        case LockOn: v = 0.0f; break;
+        case LockAmt: v = 0.5f; break;
+        case CtlMon: v = 0.0f; break;
+        case CtlRoom: v = 1.0f; break;
+        case CtlWidth: v = 60.0f; break;
+        case CtlDist: v = 2.4f; break;
+        case CtlToe: v = 0.5f; break;
+        case CtlColour: v = 0.35f; break;
+        case CtlLevel: case CtlMono: case CtlPhones: v = 0.0f; break;
         case SbOn: v = 1.0f; break;
         case SbAmount: case SbPunch: case SbWeight: v = 0.5f; break;
         case Src1: case Src2: case Src3: case Src4: case Src5: case Src6: case Src7: case Src8: case Src9: v = 0.5f; break;
@@ -303,7 +387,7 @@ inline bool avail (Sec s, Module m)
         case MSrc:    return s != Master && s != Bass;
         case MSteady: return s == Bass;
         case MFilt:   return s == Master || s == Guitar || s == Horns;
-        case MComp:   return s == Drums || s == Vocal;
+        case MComp:   return s == Drums || s == Vocal || s == Master;
         case MLim:    return s == Master;
         default:      return true;
     }
